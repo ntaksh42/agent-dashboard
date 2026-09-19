@@ -266,10 +266,10 @@ def load_dashboard(root):
                 if session["state"] != "ended" and now - updated > STALE_SESSION_VISIBLE:
                     continue
                 session["last_state"] = session["state"]
-                if host["health"] != "healthy" or updated > now + FUTURE_CLOCK_TOLERANCE:
+                if session["state"] != "ended" and (host["health"] != "healthy" or updated > now + FUTURE_CLOCK_TOLERANCE):
                     session["state"] = "stale"
                     session["state_reason"] = "host_health" if host["health"] != "healthy" else "clock_skew"
-                elif now - updated > SESSION_STALE_AFTER:
+                elif session["state"] != "ended" and now - updated > SESSION_STALE_AFTER:
                     session["state"] = "stale"
                     session["state_reason"] = "session_stale"
                 result["sessions"].append(session)

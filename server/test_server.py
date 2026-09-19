@@ -96,6 +96,17 @@ class LoadDashboardTests(unittest.TestCase):
             self.assertEqual(("stale", "host_health"), (result["sessions"][0]["state"], result["sessions"][0]["state_reason"]))
             self.assertEqual("running", result["sessions"][0]["last_state"])
 
+    def test_keeps_recent_ended_session_ended(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host = self.make_host(root)
+            write_json(host / "claude-a1b2c3d4.json", session_data("host-abc", state="ended", updated=now_text(timedelta(minutes=-6))))
+
+            result = dashboard_server.load_dashboard(root)
+
+            self.assertEqual("ended", result["sessions"][0]["state"])
+            self.assertNotIn("state_reason", result["sessions"][0])
+
     def test_schema_error_is_isolated_to_its_host(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
