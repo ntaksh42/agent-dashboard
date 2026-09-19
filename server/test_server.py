@@ -165,7 +165,7 @@ class SettingsTests(unittest.TestCase):
     def test_update_changes_root_and_persists_it(self):
         with tempfile.TemporaryDirectory() as directory:
             first = Path(directory) / "first"
-            second = Path(directory) / "second"
+            second = Path(directory) / "agent-dashboard"
             first.mkdir()
             second.mkdir()
             config = Path(directory) / "settings.json"
@@ -180,6 +180,15 @@ class SettingsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "存在しない"):
                 dashboard_server.resolve_root(str(Path(directory) / "missing"))
+
+    def test_rejects_existing_folder_without_dashboard_structure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            arbitrary = Path(directory) / "documents"
+            arbitrary.mkdir()
+            state = dashboard_server.DashboardState(None, Path(directory) / "settings.json")
+
+            with self.assertRaisesRegex(ValueError, "agent-dashboard"):
+                state.update(str(arbitrary))
 
 
 class HookStateTransitionTests(unittest.TestCase):

@@ -277,7 +277,17 @@ def load_dashboard(root):
 
 def inspect_root(root):
     data = load_dashboard(root)
-    return {"valid": "source_error" not in data, "hosts": len(data["hosts"]), "data_errors": data["data_errors"], "source_error": data.get("source_error")}
+    try:
+        has_host_layout = any(path.is_dir() and path.name.startswith("host-") and (path / "host.json").is_file() for path in root.iterdir())
+    except OSError:
+        has_host_layout = False
+    return {
+        "valid": "source_error" not in data,
+        "structure_valid": root.name.casefold() == "agent-dashboard" or has_host_layout,
+        "hosts": len(data["hosts"]),
+        "data_errors": data["data_errors"],
+        "source_error": data.get("source_error"),
+    }
 
 
 def resolve_root(value):
@@ -339,6 +349,8 @@ class DashboardState:
         preview = inspect_root(root)
         if not preview["valid"]:
             raise ValueError(preview["source_error"])
+        if not preview["structure_valid"]:
+            raise ValueError("agent-dashboard フォルダ、または host-*\\host.json を含むフォルダを指定してください。")
         if host_names is not None:
             if not isinstance(host_names, dict) or any(not isinstance(key, str) or not isinstance(name, str) or not name.strip() or len(name) > 64 for key, name in host_names.items()):
                 raise ValueError("PC 表示名が不正です。")
@@ -350,6 +362,19 @@ class DashboardState:
             self._root = root
             self._host_names = cleaned_names
         return preview
+
+    def pick_folder(self, initial):
+        try:
+            import tkinter
+            from tkinter import filedialog
+            window = tkinter.Tk()
+            window.withdraw()
+            window.attributes("-topmost", True)
+            selected = filedialog.askdirectory(initialdir=initial or str(self.snapshot()[0] or default_root() or HERE), title="Agent Dashboard の起点フォルダを選択")
+            window.destroy()
+        except Exception as error:
+            raise ValueError("フォルダ選択を開けませんでした。パスを入力してください。") from error
+        return selected
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -398,6 +423,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": str(error) or "設定を保存できませんでした。"})
             return
         self.send_json(200, preview)
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 0 or length > 16_384:
+                raise ValueError("設定内容が不正です。")
+            payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            if not isinstance(payload, dict):
+                raise ValueError("設定内容が不正です。")
+            if path == "/api/settings/preview":
+                self.send_json(200, self.state.preview(payload.get("root_dir")))
+                return
+            if path == "/api/settings/pick-folder":
+                self.send_json(200, {"root_dir": self.state.pick_folder(payload.get("initial"))})
+                return
+            self.send_error(404)
+        except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError, DataError) as error:
+            self.send_json(400, {"error": str(error) or "設定を処理できませんでした。"})
 
     def log_message(self, *args):
         pass
