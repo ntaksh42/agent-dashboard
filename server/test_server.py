@@ -200,6 +200,16 @@ class LoadDashboardTests(unittest.TestCase):
         self.assertEqual([], result["hosts"])
         self.assertIn("起点フォルダ", result["source_error"])
 
+    def test_ignores_non_host_directories_and_reports_invalid_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "documents"
+            (root / "notes").mkdir(parents=True)
+
+            result = dashboard_server.load_dashboard(root)
+
+            self.assertEqual([], result["hosts"])
+            self.assertIn("構造", result["source_error"])
+
 
 class SettingsTests(unittest.TestCase):
     def test_saves_and_loads_existing_root_and_host_names(self):

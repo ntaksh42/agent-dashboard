@@ -207,9 +207,13 @@ def load_dashboard(root):
         result["source_error"] = "起点フォルダが未設定か、アクセスできません。設定から有効なフォルダを指定してください。"
         return result
     try:
-        directories = sorted(path for path in root.iterdir() if path.is_dir())
+        all_directories = sorted(path for path in root.iterdir() if path.is_dir())
     except OSError:
         result["source_error"] = "起点フォルダを読み取れません。アクセス権を確認してください。"
+        return result
+    directories = [path for path in all_directories if path.name.startswith("host-")]
+    if not directories and all_directories:
+        result["source_error"] = "起点フォルダの構造が正しくありません。agent-dashboard フォルダを指定してください。"
         return result
     if len(directories) > MAX_HOSTS:
         result["source_error"] = f"監視端末数が上限（{MAX_HOSTS}）を超えています。"
