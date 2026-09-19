@@ -1,3 +1,5 @@
 __pycache__/
 # 実セッションの内容が写るスクリーンショット
 docs/prototype.png
+# ローカル動作確認用に server.py --dir で指定したセッション状態フォルダ
+.rundata/
