@@ -12,7 +12,8 @@ try {
             $config = Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json
             foreach ($event in $events) {
                 $found = @($config.hooks.$event | ForEach-Object { $_.hooks } | Where-Object {
-                    $_ -and $_.type -eq 'command' -and $_.command -match 'dashboard-hook\.ps1' -and $_.command -match "-Tool\s+$tool(?:\s|$)"
+                    # launcher 経由は `dashboard-hook.ps1" <tool>`、旧形式は `-Tool <tool>` でツールを渡す。
+                    $_ -and $_.type -eq 'command' -and $_.command -match 'dashboard-hook\.ps1' -and $_.command -match "(?:-Tool\s+|dashboard-hook\.ps1`"?\s+)$tool(?:\s|`"|$)"
                 })
                 if (-not $found.Count) { return $false }
             }

@@ -421,5 +421,72 @@ class HookStateTransitionTests(unittest.TestCase):
                 self.assertEqual((state, activity), (value["state"], value["activity"]), f"{tool} {event_name}")
 
 
+class HookDetectionTests(unittest.TestCase):
+    """install.ps1 が書くコマンド形式を heartbeat が導入済みと判定できることを固定する。"""
+
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    hook_root = Path(__file__).parents[1] / "hook"
+
+    def setUp(self):
+        if not self.powershell:
+            self.skipTest("PowerShell is required for hook detection tests")
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.environment = os.environ.copy()
+        self.environment.update({
+            "OneDrive": str(self.root / "onedrive"),
+            "HOME": str(self.home),
+            "USERPROFILE": str(self.home),
+            "COMPUTERNAME": "TEST-PC",
+            "USERNAME": "dashboard-test",
+        })
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def run_script(self, *arguments):
+        return subprocess.run(
+            [self.powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", *map(str, arguments)],
+            text=True, encoding="utf-8", env=self.environment, capture_output=True,
+        )
+
+    def install_hooks(self):
+        """install.ps1 の hook 登録だけを実行する。
+
+        install.ps1 をそのまま走らせると実機の scheduled task を書き換えてしまうため、
+        Install-Heartbeat を無効化した上で読み込み、コマンド文字列の生成は本物を使う。
+        """
+        script = (self.hook_root / "install.ps1").read_text(encoding="utf-8-sig")
+        script = script.replace("Install-Heartbeat\n", "")
+        harness = self.hook_root / "install-hooks-only.test.ps1"
+        harness.write_text(script, encoding="utf-8-sig")
+        self.addCleanup(harness.unlink)
+        return self.run_script(harness)
+
+    def host_tools(self):
+        heartbeat = self.run_script(self.hook_root / "dashboard-heartbeat.ps1")
+        self.assertEqual(0, heartbeat.returncode, heartbeat.stderr)
+        files = sorted((Path(self.environment["OneDrive"]) / "agent-dashboard").glob("host-*/host.json"))
+        self.assertEqual(1, len(files), "host.json が生成されていません")
+        return json.loads(files[0].read_text(encoding="utf-8"))["tools"]
+
+    def test_installed_hooks_are_detected_as_configured(self):
+        install = self.install_hooks()
+        self.assertEqual(0, install.returncode, install.stderr)
+
+        tools = self.host_tools()
+
+        self.assertTrue(tools["claude"]["configured"], "Claude hook が未設定と判定されました")
+        self.assertTrue(tools["codex"]["configured"], "Codex hook が未設定と判定されました")
+
+    def test_missing_hooks_are_reported_as_unconfigured(self):
+        tools = self.host_tools()
+
+        self.assertFalse(tools["claude"]["configured"])
+        self.assertFalse(tools["codex"]["configured"])
+
+
 if __name__ == "__main__":
     unittest.main()
