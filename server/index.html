@@ -5,168 +5,74 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent Dashboard</title>
 <style>
-  :root {
-    --bg: #f3f4f6; --surface: #ffffff; --surface2: #f8f9fb; --border: #e2e5ea;
-    --text: #15181d; --text2: #4b5563; --text3: #8a919c;
-    --waiting: #c47a00; --waiting-bg: #fff6e5; --running: #2463eb; --idle: #16875a; --ended: #9aa1ab;
-    --claude: #c15f3c; --codex: #6b7280;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0e1014; --surface: #171a20; --surface2: #1e2229; --border: #2a2f38;
-      --text: #eceef1; --text2: #b3bac4; --text3: #7a828e;
-      --waiting: #f5a524; --waiting-bg: #2a2112; --running: #5b9bff; --idle: #3fbf85; --ended: #6b7280;
-      --claude: #e0876a; --codex: #a3aab5;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 20px 24px 40px; background: var(--bg); color: var(--text);
-         font: 14px/1.55 "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif; }
-  code, .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
-
-  header { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 24px; }
-  h1 { font-size: 20px; margin: 0; letter-spacing: .01em; }
-  .stats { display: flex; gap: 10px; }
-  .stat { display: flex; align-items: baseline; gap: 8px; background: var(--surface); border: 1px solid var(--border);
-          border-radius: 10px; padding: 6px 14px; }
-  .stat b { font-size: 22px; line-height: 1; color: var(--c); font-variant-numeric: tabular-nums; }
-  .stat span { font-size: 12px; color: var(--text2); }
-  .stat.zero b { color: var(--text3); }
-  .updated { margin-left: auto; font-size: 12px; color: var(--text3); }
-  .updated.error { color: var(--waiting); }
-
-  .section-title { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600;
-                   color: var(--waiting); margin: 0 0 10px; letter-spacing: .04em; }
-  .section-title .count { font-weight: normal; color: var(--text3); }
-  .attention { margin-bottom: 28px; }
-  .attention .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; }
-
-  .columns { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px; align-items: start; }
-  .column { display: flex; flex-direction: column; gap: 10px; }
-  .pc { display: flex; align-items: center; gap: 8px; padding: 0 2px 8px; border-bottom: 1px solid var(--border); }
-  .pc h2 { font-size: 15px; margin: 0; }
-  .pc .sync { margin-left: auto; font-size: 12px; color: var(--text3); display: flex; align-items: center; gap: 6px; }
-  .pc .sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
-  .empty { font-size: 12px; color: var(--text3); padding: 8px 2px; }
-  .nodata { color: var(--text3); text-align: center; padding: 60px 0; }
-
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
-          display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .card.waiting { background: var(--waiting-bg); border-color: var(--waiting); }
-  .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--c); }
-  .state i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
-  .state.running i { animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: .25; } }
-  .state small { font-weight: normal; color: var(--text3); font-size: 12px; }
-  .tool { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--t); border: 1px solid var(--t);
-          border-radius: 4px; padding: 0 6px; opacity: .9; }
-  .pcname { font-size: 12px; color: var(--text2); }
-  .project { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .branch { color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .prompt { color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .prompt.none { color: var(--text3); }
-  .recent { font-size: 12.5px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .recent::before { content: "直近 "; color: var(--text3); }
-  .activity { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
-              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text2); }
-  .card.waiting .activity { border-color: var(--waiting); color: var(--text); }
-  .activity::before { content: "$ "; color: var(--text3); }
-
-  details.ended { margin-top: 28px; color: var(--text3); font-size: 13px; }
-  details.ended summary { cursor: pointer; }
-  details.ended ul { margin: 8px 0 0; padding-left: 18px; }
+  :root { --bg:#f3f4f6; --surface:#fff; --surface2:#f8f9fb; --border:#e2e5ea; --text:#15181d; --text2:#4b5563; --text3:#7a828e; --waiting:#c47a00; --running:#2463eb; --idle:#16875a; --error:#c43831; --stale:#8a6b18; --offline:#737b87; --unknown:#737b87; --ended:#9aa1ab; --claude:#c15f3c; --codex:#586170; }
+  @media (prefers-color-scheme:dark) { :root { --bg:#0e1014; --surface:#171a20; --surface2:#1e2229; --border:#2a2f38; --text:#eceef1; --text2:#b3bac4; --text3:#7a828e; --waiting:#f5a524; --running:#5b9bff; --idle:#3fbf85; --error:#ff7770; --stale:#e3bc4a; --offline:#9299a5; --unknown:#9299a5; --ended:#6b7280; --claude:#e0876a; --codex:#a3aab5; } }
+  * { box-sizing:border-box; } body { margin:0; padding:20px 24px 40px; background:var(--bg); color:var(--text); font:14px/1.55 "Segoe UI Variable Text","Segoe UI","Yu Gothic UI",Meiryo,sans-serif; }
+  header { display:flex; align-items:center; gap:20px; flex-wrap:wrap; margin-bottom:22px; } h1 { font-size:20px; margin:0; } .stats { display:flex; gap:10px; flex-wrap:wrap; } .stat { display:flex; align-items:baseline; gap:7px; border:1px solid var(--border); background:var(--surface); border-radius:9px; padding:5px 11px; } .stat b { color:var(--c); font-size:20px; line-height:1; } .stat span,.updated { color:var(--text2); font-size:12px; } .updated { margin-left:auto; } .updated.error { color:var(--error); } button { color:var(--text); font:inherit; cursor:pointer; } .settings-button,.dialog-actions button { border:1px solid var(--border); background:var(--surface); border-radius:7px; padding:6px 10px; } .dialog-actions .primary { background:var(--running); border-color:var(--running); color:#fff; }
+  .attention { margin-bottom:24px; } .attention h2 { color:var(--error); font-size:13px; margin:0 0 9px; } .attention-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:10px; } .notice { border-left:4px solid var(--c); background:var(--surface); border-radius:7px; padding:8px 10px; } .notice b { display:block; font-size:12px; } .notice span { color:var(--text2); font-size:12px; }
+  .hosts { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:16px; align-items:start; } .host { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; } .host-head { display:flex; align-items:center; gap:8px; padding:11px 13px; border-bottom:1px solid var(--border); } .host-head h2 { margin:0; font-size:15px; min-width:0; overflow:hidden; text-overflow:ellipsis; } .host-meta { margin-left:auto; color:var(--text3); font-size:11px; white-space:nowrap; } .badge { display:inline-flex; align-items:center; gap:5px; border-radius:999px; color:var(--c); font-size:11px; font-weight:600; } .badge i { width:7px; height:7px; border-radius:50%; background:var(--c); } .tools { display:flex; gap:5px; margin-left:auto; } .tool { color:var(--text3); border:1px solid var(--border); border-radius:4px; padding:0 5px; font-size:10px; } .tool.on { color:var(--t); border-color:var(--t); } .sessions { padding:10px; display:flex; flex-direction:column; gap:8px; } .empty { color:var(--text3); font-size:12px; padding:4px; }
+  .card { border:1px solid var(--border); border-left:4px solid var(--c); border-radius:7px; padding:8px 9px; min-width:0; } .card-top { display:flex; align-items:center; gap:7px; } .card .tool { margin-left:auto; } .project { font-size:14px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .branch,.activity { color:var(--text2); font-family:"Cascadia Mono",Consolas,monospace; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .activity { margin-top:2px; } .state { color:var(--c); font-size:11px; font-weight:600; } .age { color:var(--text3); font-size:11px; }
+  details { margin-top:24px; color:var(--text3); font-size:12px; } summary { cursor:pointer; } ul { margin:8px 0; padding-left:20px; } .nodata { color:var(--text3); padding:50px 0; text-align:center; } dialog { color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 12px 40px #0005; max-width:560px; width:calc(100% - 32px); padding:20px; } dialog::backdrop { background:#0006; } dialog h2 { margin:0 0 12px; font-size:17px; } dialog p { color:var(--text2); font-size:12px; margin:0 0 12px; } label { display:block; font-size:12px; font-weight:600; margin-bottom:5px; } input { width:100%; color:var(--text); background:var(--surface2); border:1px solid var(--border); border-radius:6px; font:13px "Cascadia Mono",Consolas,monospace; padding:8px; } .setting-error { color:var(--error); min-height:1.55em; margin-top:8px; } .dialog-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Agent Dashboard</h1>
-  <div class="stats" id="stats"></div>
-  <span class="updated" id="updated"></span>
-</header>
+<header><h1>Agent Dashboard</h1><div class="stats" id="stats"></div><span class="updated" id="updated"></span><button class="settings-button" id="open-settings" type="button">設定</button></header>
 <section class="attention" id="attention"></section>
-<div class="columns" id="columns"></div>
-<details class="ended" id="ended" hidden></details>
+<main class="hosts" id="hosts"></main>
+<details id="ended" hidden></details>
+<dialog id="settings-dialog"><form id="settings-form"><h2>設定</h2><p>状態 JSON を保存している起点フォルダを指定します。通常は OneDrive 内の <code>agent-dashboard</code> フォルダです。</p><label for="root-dir">起点フォルダ</label><input id="root-dir" name="root_dir" type="text" autocomplete="off" required><div class="setting-error" id="setting-error" role="alert"></div><div class="dialog-actions"><button type="button" id="cancel-settings">キャンセル</button><button class="primary" type="submit">保存</button></div></form></dialog>
 <script>
-const STATES = { waiting: '承認待ち', running: '実行中', idle: '入力待ち', ended: '終了' };
-const ORDER = { waiting: 0, running: 1, idle: 2, ended: 3 };
-const TOOL = { claude: ['Claude Code', 'var(--claude)'], codex: ['Codex', 'var(--codex)'] };
+const LABEL = { waiting:'承認待ち', running:'実行中', idle:'入力待ち', error:'エラー', stale:'状態不明', ended:'終了', online:'オンライン', offline:'オフライン', unknown:'未確認' };
+const ORDER = { waiting:0, error:1, running:2, idle:3, stale:4, ended:5 };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const age = value => { const sec = Math.max(0, (Date.now() - Date.parse(value)) / 1000); return sec < 60 ? `${sec|0}秒` : sec < 3600 ? `${sec/60|0}分` : `${sec/3600|0}時間`; };
+const tool = (name, on) => `<span class="tool ${on ? 'on' : ''}" style="--t:var(--${name})">${name === 'claude' ? 'Claude' : 'Codex'}</span>`;
 
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const dur = ms => {
-  const sec = Math.max(0, (Date.now() - ms) / 1000);
-  return sec < 60 ? `${sec|0}秒` : sec < 3600 ? `${sec/60|0}分` : `${sec/3600|0}時間`;
-};
-const base = p => (p || '').split(/[\\/]/).filter(Boolean).pop() || p;
-
-function card(s, withPc) {
-  const [toolName, toolColor] = TOOL[s.tool] || [s.tool, 'var(--text3)'];
-  return `<div class="card ${esc(s.state)}">
-    <div class="row">
-      <span class="state ${esc(s.state)}" style="--c: var(--${esc(s.state)})"><i></i>${STATES[s.state] || esc(s.state)}<small>${dur(Date.parse(s.updated_at))}</small></span>
-      ${withPc ? `<span class="pcname">${esc(s.pc)}</span>` : ''}
-      <span class="tool" style="--t: ${toolColor}">${esc(toolName)}</span>
-    </div>
-    <div class="row" title="${esc(s.cwd)}">
-      <span class="project">${esc(base(s.cwd) || '(不明)')}</span>
-      ${s.branch ? `<span class="branch mono">${esc(s.branch)}</span>` : ''}
-    </div>
-    ${s.first_prompt ? `<div class="prompt">${esc(s.first_prompt)}</div>` : '<div class="prompt none">(プロンプト未取得)</div>'}
-    ${s.last_prompt && s.last_prompt !== s.first_prompt ? `<div class="recent">${esc(s.last_prompt)}</div>` : ''}
-    ${s.activity ? `<div class="activity mono">${esc(s.activity)}</div>` : ''}
-  </div>`;
+function sessionCard(s) {
+  return `<article class="card" style="--c:var(--${esc(s.state)})"><div class="card-top"><span class="state">${esc(LABEL[s.state] || s.state)}</span><span class="age">${age(s.updated_at)}前</span><span class="tool ${s.tool}" style="--t:var(--${esc(s.tool)})">${esc(s.tool === 'claude' ? 'Claude' : 'Codex')}</span></div><div class="project">${esc(s.project || 'プロジェクト不明')}</div>${s.branch ? `<div class="branch">${esc(s.branch)}</div>` : ''}${s.activity ? `<div class="activity">${esc(s.activity)}</div>` : ''}</article>`;
 }
 
-function render(sessions) {
-  const sorted = [...sessions].sort((a, b) =>
-    (ORDER[a.state] ?? 9) - (ORDER[b.state] ?? 9) || Date.parse(b.updated_at) - Date.parse(a.updated_at));
-  const live = sorted.filter(s => s.state !== 'ended');
-  const waiting = live.filter(s => s.state === 'waiting');
-  const count = st => live.filter(s => s.state === st).length;
-
-  document.getElementById('stats').innerHTML = ['waiting', 'running', 'idle'].map(st =>
-    `<div class="stat ${count(st) ? '' : 'zero'}" style="--c: var(--${st})"><b>${count(st)}</b><span>${STATES[st]}</span></div>`).join('');
-  document.title = waiting.length ? `(${waiting.length}) Agent Dashboard` : 'Agent Dashboard';
-
-  document.getElementById('attention').innerHTML = waiting.length
-    ? `<div class="section-title">要対応<span class="count">${waiting.length}</span></div>
-       <div class="grid">${waiting.map(s => card(s, true)).join('')}</div>`
-    : '';
-
-  const pcs = [...new Set(sessions.map(s => s.pc))].sort();
-  document.getElementById('columns').innerHTML = pcs.length ? pcs.map(pc => {
-    const rest = live.filter(s => s.pc === pc && s.state !== 'waiting');
-    const last = Math.max(...sessions.filter(s => s.pc === pc).map(s => Date.parse(s.updated_at)));
-    const fresh = Date.now() - last < 5 * 60000;
-    return `<div class="column">
-      <div class="pc"><h2>${esc(pc)}</h2>
-        <span class="sync" style="--c: ${fresh ? 'var(--idle)' : 'var(--ended)'}"><i></i>最終更新 ${dur(last)}前</span></div>
-      ${rest.map(s => card(s, false)).join('') || '<div class="empty">承認待ち以外のセッションはありません</div>'}
-    </div>`;
-  }).join('') : '<div class="nodata">セッションがありません</div>';
-
-  const ended = sorted.filter(s => s.state === 'ended');
-  const el = document.getElementById('ended');
-  const open = el.open;
-  el.hidden = !ended.length;
-  el.innerHTML = `<summary>終了したセッション（${ended.length}）</summary><ul>${ended.map(s =>
-    `<li>${esc(s.pc)} / ${esc(base(s.cwd))} — ${esc(s.first_prompt || '(プロンプト未取得)')}（${dur(Date.parse(s.updated_at))}前）</li>`).join('')}</ul>`;
-  el.open = open;
+function render(data) {
+  const live = data.sessions.filter(s => s.state !== 'ended').sort((a,b) => (ORDER[a.state] ?? 9) - (ORDER[b.state] ?? 9) || Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  const count = state => live.filter(s => s.state === state).length;
+  document.getElementById('stats').innerHTML = [['waiting','承認待ち'],['running','実行中'],['error','エラー'],['offline','オフライン']].map(([state,label]) => `<div class="stat" style="--c:var(--${state})"><b>${state === 'offline' ? data.hosts.filter(h => h.status === 'offline').length : count(state)}</b><span>${label}</span></div>`).join('');
+  document.title = count('waiting') || count('error') ? `(${count('waiting') + count('error')}) Agent Dashboard` : 'Agent Dashboard';
+  const concerns = [...live.filter(s => s.state === 'waiting' || s.state === 'error').map(s => ({pc:s.pc, label:LABEL[s.state], detail:s.project || 'プロジェクト不明', color:s.state})), ...data.hosts.filter(h => h.status === 'offline' || h.status === 'stale').map(h => ({pc:h.pc, label:LABEL[h.status], detail:`heartbeat は ${age(h.last_seen_at)}前`, color:h.status}))];
+  document.getElementById('attention').innerHTML = concerns.length ? `<h2>要確認 (${concerns.length})</h2><div class="attention-list">${concerns.map(c => `<div class="notice" style="--c:var(--${c.color})"><b>${esc(c.pc)} — ${esc(c.label)}</b><span>${esc(c.detail)}</span></div>`).join('')}</div>` : '';
+  document.getElementById('hosts').innerHTML = data.hosts.length ? data.hosts.map(host => {
+    const sessions = live.filter(s => s.pc === host.pc);
+    return `<section class="host"><div class="host-head"><span class="badge" style="--c:var(--${host.status})"><i></i>${esc(LABEL[host.status] || host.status)}</span><h2>${esc(host.pc)}</h2><span class="tools">${tool('claude', host.tools.claude)}${tool('codex', host.tools.codex)}</span></div><div class="sessions">${sessions.map(sessionCard).join('') || '<div class="empty">アクティブなセッションはありません</div>'}</div><div class="host-meta">heartbeat ${age(host.last_seen_at)}前</div></section>`;
+  }).join('') : `<div class="nodata">${esc(data.source_error || '端末情報がありません。各端末で install.ps1 を実行してください。')}</div>`;
+  const ended = data.sessions.filter(s => s.state === 'ended'); const el = document.getElementById('ended'); const open = el.open; el.hidden = !ended.length; el.innerHTML = `<summary>終了したセッション（${ended.length}）</summary><ul>${ended.map(s => `<li>${esc(s.pc)} / ${esc(s.project || 'プロジェクト不明')} — ${age(s.updated_at)}前</li>`).join('')}</ul>`; el.open = open;
+  const updated = document.getElementById('updated'); updated.textContent = `画面更新 ${new Date().toLocaleTimeString()}${data.data_errors ? ` / 読み取りエラー ${data.data_errors}` : ''}`; updated.classList.toggle('error', Boolean(data.data_errors));
 }
 
-async function refresh() {
-  const updated = document.getElementById('updated');
+async function refresh() { const updated = document.getElementById('updated'); try { render(await (await fetch('/api/dashboard')).json()); updated.classList.remove('error'); } catch { updated.textContent = 'サーバに接続できません'; updated.classList.add('error'); } }
+const dialog = document.getElementById('settings-dialog');
+const rootDir = document.getElementById('root-dir');
+const settingError = document.getElementById('setting-error');
+document.getElementById('open-settings').addEventListener('click', async () => {
+  settingError.textContent = '';
   try {
-    render(await (await fetch('/api/sessions')).json());
-    updated.textContent = `最終更新 ${new Date().toLocaleTimeString()}`;
-    updated.classList.remove('error');
-  } catch {
-    updated.textContent = 'サーバに接続できません';
-    updated.classList.add('error');
-  }
-}
-refresh();
-setInterval(refresh, 2000);
+    const settings = await (await fetch('/api/settings')).json();
+    rootDir.value = settings.root_dir || settings.default_root_dir || '';
+    dialog.showModal();
+    rootDir.focus();
+  } catch { settingError.textContent = '設定を読み込めませんでした。'; dialog.showModal(); }
+});
+document.getElementById('cancel-settings').addEventListener('click', () => dialog.close());
+document.getElementById('settings-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  settingError.textContent = '';
+  try {
+    const response = await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({root_dir:rootDir.value}) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || '設定を保存できませんでした。');
+    dialog.close();
+    refresh();
+  } catch (error) { settingError.textContent = error.message; }
+});
+refresh(); setInterval(refresh, 5000);
 </script>
 </body>
 </html>

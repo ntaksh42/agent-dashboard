@@ -1,71 +1,101 @@
-﻿# Claude Code / Codex の hook から呼ばれ、セッション状態を OneDrive に書き出す。
-# 出力: %OneDrive%\agent-dashboard\<PC名>\<tool>-<session_id>.json
-# エージェントの動作を妨げないよう、何が起きても何も出力せず exit 0 する。
+﻿# Claude Code / Codex の hook から呼ばれ、最小限のセッション状態を OneDrive に書き出す。
+# プロンプト、実行コマンド、絶対パスは同期しない。
 param([Parameter(Mandatory)][ValidateSet('claude', 'codex')][string]$Tool)
+. $PSScriptRoot\dashboard-common.ps1
 
-function Shorten([string]$s, [int]$n) {
-    if (-not $s) { return $null }
-    $s = ($s -replace '\s+', ' ').Trim()
-    if ($s.Length -gt $n) { $s.Substring(0, $n) + '...' } else { $s }
+function Set-ProjectMetadata($state, [string]$cwd) {
+    if (-not $cwd) {
+        $state.project = $null; $state.project_id = $null; $state.project_status = 'cwd_missing'
+        $state.branch = $null; $state.branch_status = 'unavailable'
+        return
+    }
+    $trimmed = $cwd.TrimEnd('\', '/')
+    $project = Split-Path $trimmed -Leaf
+    $state.project = Limit-Text $project 96
+    $state.project_id = "project-$(Get-HashId $cwd 10)"
+    $state.project_status = if ($project) { 'available' } else { 'cwd_root' }
+    $branch = (& git -C $cwd branch --show-current 2>$null | Select-Object -First 1)
+    if ($LASTEXITCODE -eq 0 -and $branch) {
+        $state.branch = Limit-Text $branch 128; $state.branch_status = 'branch'
+        return
+    }
+    $insideGit = (& git -C $cwd rev-parse --is-inside-work-tree 2>$null | Select-Object -First 1)
+    $state.branch = $null
+    $state.branch_status = if ($insideGit -eq 'true') { 'detached' } else { 'non_git' }
 }
 
-function Describe-Tool($name, $in) {
-    $detail = $null
-    foreach ($k in 'file_path', 'path', 'command', 'pattern', 'url', 'query', 'description', 'prompt') {
-        $v = $in.$k
-        if ($v) { $detail = if ($v -is [array]) { $v -join ' ' } else { [string]$v }; break }
+function Clear-Activity($state) {
+    $state.activity = $null
+    $state.activity_expires_at = $null
+}
+
+function Set-TransientActivity($state, [string]$activity, [string]$now) {
+    $state.activity = $activity
+    $state.activity_expires_at = (Get-Date $now).ToUniversalTime().AddSeconds(30).ToString('o')
+}
+
+function Update-HookHealth([string]$directory, $dashboardHost, [string]$now) {
+    $mutex = New-Object Threading.Mutex($false, "Local\agent-dashboard-hook-health-$($dashboardHost.host_id)")
+    $locked = $false
+    try {
+        $locked = $mutex.WaitOne(5000)
+        if (-not $locked) { return }
+        Write-DashboardJson (Join-Path $directory 'hook.json') ([ordered]@{ schema_version = 3; host_id = $dashboardHost.host_id; last_hook_at = $now })
+    } finally {
+        if ($locked) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
     }
-    # apply_patch 等はパッチ本文ではなく対象ファイル名を出す
-    if ($detail -match '\*\*\* (?:Add|Update|Delete) File: (\S+)') { $detail = $Matches[1] }
-    Shorten "$name $detail" 160
 }
 
 try {
     [Console]::InputEncoding = [Text.Encoding]::UTF8
-    $e = [Console]::In.ReadToEnd() | ConvertFrom-Json
-    if (-not $e.session_id) { exit 0 }
+    $event = [Console]::In.ReadToEnd() | ConvertFrom-Json
+    if (-not $event.session_id -or -not $env:OneDrive) { exit 0 }
+    if ($event.agent_id -or $event.agent_type) { exit 0 }
 
-    $dir = Join-Path $env:OneDrive "agent-dashboard\$env:COMPUTERNAME"
+    $dashboardHost = Get-DashboardHost
+    $dir = Get-DashboardDataDirectory $dashboardHost
     $null = New-Item -ItemType Directory -Force $dir
-    $path = Join-Path $dir "$Tool-$($e.session_id).json"
-    # 非同期 hook が同じセッションのファイルを同時に更新しないよう直列化する
-    $mutex = New-Object Threading.Mutex($false, "Local\agent-dashboard-$($e.session_id)")
-    try { $null = $mutex.WaitOne(5000) } catch [Threading.AbandonedMutexException] { }
-    $now = (Get-Date).ToUniversalTime().ToString('o')
-
-    $s = if (Test-Path $path) { Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json } else {
-        [pscustomobject]@{
-            pc = $env:COMPUTERNAME; tool = $Tool; session_id = $e.session_id; cwd = $null; branch = $null
-            started_at = $now; first_prompt = $null; last_prompt = $null; activity = $null; state = 'idle'; updated_at = $now
+    $sessionKey = Get-HashId "$Tool`n$($event.session_id)"
+    $path = Join-Path $dir "$Tool-$sessionKey.json"
+    $mutex = New-Object Threading.Mutex($false, "Local\agent-dashboard-$Tool-$sessionKey")
+    $locked = $false
+    try {
+        $locked = $mutex.WaitOne(5000)
+        if (-not $locked) { exit 0 }
+        $now = Get-DashboardNow
+        $state = if (Test-Path $path) { Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json } else {
+            [pscustomobject]@{
+                schema_version = 3; host_id = $dashboardHost.host_id; pc = $dashboardHost.pc; user = $dashboardHost.user; tool = $Tool
+                session = $sessionKey.Substring(0, 8); project = $null; project_id = $null; project_status = 'cwd_missing'
+                branch = $null; branch_status = 'unavailable'; activity = $null; activity_expires_at = $null
+                state = 'idle'; started_at = $now; updated_at = $now
+            }
         }
+
+        # SessionEnd は終端状態。遅延した非同期イベントで復帰させない。
+        if ($state.state -eq 'ended' -and $event.hook_event_name -ne 'SessionStart') { exit 0 }
+        Set-ProjectMetadata $state $event.cwd
+
+        switch ($event.hook_event_name) {
+            'SessionStart' { $state.state = 'idle'; Clear-Activity $state }
+            'UserPromptSubmit' { $state.state = 'running'; Clear-Activity $state }
+            'PreToolUse' { $state.state = 'running'; Clear-Activity $state; $state.activity = 'tool_running' }
+            'PostToolUse' { $state.state = 'running'; Clear-Activity $state }
+            'PostToolUseFailure' { $state.state = 'running'; Set-TransientActivity $state 'tool_failed' $now }
+            'PermissionRequest' { $state.state = 'waiting'; Clear-Activity $state; $state.activity = 'approval_pending' }
+            'PermissionDenied' { $state.state = 'running'; Set-TransientActivity $state 'approval_denied' $now }
+            'StopFailure' { $state.state = 'error'; $state.activity = 'turn_failed'; $state.activity_expires_at = $null }
+            'Stop' { $state.state = 'idle'; Clear-Activity $state }
+            'Interrupt' { $state.state = 'idle'; Set-TransientActivity $state 'interrupted' $now }
+            'SessionEnd' { $state.state = 'ended'; Clear-Activity $state }
+        }
+        $state.updated_at = $now
+        Write-DashboardJson $path $state
+        Update-HookHealth $dir $dashboardHost $now
+    } finally {
+        if ($locked) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
     }
-    if ($e.cwd) { $s.cwd = $e.cwd }
-
-    switch ($e.hook_event_name) {
-        'SessionStart' {
-            $s.state = 'idle'
-            # 終了済みの古いファイルを掃除する（増え続けないように）
-            Get-ChildItem $dir -Filter *.json | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } | Remove-Item -Force
-        }
-        'UserPromptSubmit' {
-            $p = Shorten $e.prompt 200
-            if (-not $s.first_prompt) { $s.first_prompt = $p }
-            $s.last_prompt = $p
-            $s.activity = $null
-            $s.state = 'running'
-            if ($e.cwd) { $s.branch = git -C $e.cwd branch --show-current 2>$null }
-        }
-        'PreToolUse' { $s.state = 'running'; $s.activity = Describe-Tool $e.tool_name $e.tool_input }
-        'PostToolUse' { $s.state = 'running' }
-        'PermissionRequest' { $s.state = 'waiting'; $s.activity = Describe-Tool $e.tool_name $e.tool_input }
-        { $_ -in 'Stop', 'Interrupt' } { $s.state = 'idle' }
-        'SessionEnd' { $s.state = 'ended' }
-    }
-    $s.updated_at = $now
-
-    # 読み手が書きかけのファイルを読まないよう、一時ファイル経由で置き換える
-    $tmp = "$path.tmp"
-    [IO.File]::WriteAllText($tmp, ($s | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))
-    Move-Item -Force $tmp $path
-} catch { } finally { if ($mutex) { try { $mutex.ReleaseMutex() } catch { } } }
+} catch { }
 exit 0
