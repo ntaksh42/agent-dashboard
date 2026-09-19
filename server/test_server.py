@@ -94,6 +94,7 @@ class LoadDashboardTests(unittest.TestCase):
 
             self.assertEqual("unmonitorable", result["hosts"][0]["health"])
             self.assertEqual(("stale", "host_health"), (result["sessions"][0]["state"], result["sessions"][0]["state_reason"]))
+            self.assertEqual("running", result["sessions"][0]["last_state"])
 
     def test_schema_error_is_isolated_to_its_host(self):
         with tempfile.TemporaryDirectory() as directory:

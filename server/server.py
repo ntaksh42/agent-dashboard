@@ -144,6 +144,9 @@ def validate_session(source, directory_id):
         raise DataError("state_value")
     if activity not in KNOWN_ACTIVITIES and activity is not None:
         raise DataError("activity_value")
+    failure_reason = source.get("failure_reason")
+    if failure_reason is not None and failure_reason not in KNOWN_FAILURE_REASONS:
+        raise DataError("failure_reason")
     project_status = source.get("project_status")
     branch_status = source.get("branch_status")
     if project_status not in KNOWN_PROJECT_STATUSES or branch_status not in KNOWN_BRANCH_STATUSES:
@@ -166,7 +169,7 @@ def validate_session(source, directory_id):
         "branch_status": branch_status,
         "activity": activity,
         "activity_expires_at": iso_time(expires) if expires else None,
-        "failure_reason": source.get("failure_reason") if source.get("failure_reason") in KNOWN_FAILURE_REASONS else None,
+        "failure_reason": failure_reason,
         "state": state,
         "started_at": iso_time(started),
         "updated_at": iso_time(updated),
@@ -258,6 +261,7 @@ def load_dashboard(root):
                     continue
                 if session["state"] != "ended" and now - updated > STALE_SESSION_VISIBLE:
                     continue
+                session["last_state"] = session["state"]
                 if host["health"] != "healthy" or updated > now + FUTURE_CLOCK_TOLERANCE:
                     session["state"] = "stale"
                     session["state_reason"] = "host_health" if host["health"] != "healthy" else "clock_skew"

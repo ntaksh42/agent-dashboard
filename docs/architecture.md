@@ -40,6 +40,8 @@ Task Scheduler (60秒) ────┘                         host.json / hook.
 
 session JSON は `host_id`, `pc`, `user`, `tool`, `session`, `project`, `project_id`, `project_status`, `branch`, `branch_status`, `activity`, `activity_expires_at`, `state`, `started_at`, `updated_at` だけを保存する。`host_id` は Windows SID と PC 名から生成する非可逆 ID、`session` は元の session ID の短いハッシュ、`project_id` は cwd の短いハッシュである。これにより同じ PC の別ユーザー、同名 project、同一 project の複数 session を区別する。
 
+サーバーは監視状態・時刻異常で session を `stale` に派生させる際、元の値を API の `last_state` として返す。画面は「最終確認時: 実行中」のように表示し、現在も実行中とは断定しない。
+
 `project_status` は `available` / `cwd_missing` / `cwd_root` / `cwd_error`、`branch_status` は `branch` / `detached` / `non_git` / `unavailable` のいずれかである。git worktree は通常の branch 表示と非可逆 `project_id` の組み合わせで区別する。
 
 同じ `(tool, session)` を名乗る複数ファイルは、ファイル名順で最初の1件だけを採用し、残りを当該 host のデータ異常として表示する。host ID が重複する directory は host ID 不一致として採用しない。
