@@ -19,11 +19,11 @@ function Remove-DashboardHandlers($groups) {
     $kept = @()
     foreach ($group in @($groups)) {
         if (-not $group) { continue }
-        $handlers = @($group.hooks | Where-Object { $_ -and $_.command -notlike '*dashboard-hook.ps1*' })
+        [object[]]$handlers = @($group.hooks | Where-Object { $_ -and $_.command -notlike '*dashboard-hook.ps1*' })
         if (-not $handlers.Count) { continue }
         $copy = [ordered]@{}
         foreach ($property in $group.PSObject.Properties) {
-            $copy[$property.Name] = if ($property.Name -eq 'hooks') { $handlers } else { $property.Value }
+            if ($property.Name -eq 'hooks') { $copy[$property.Name] = @($handlers) } else { $copy[$property.Name] = $property.Value }
         }
         $kept += [pscustomobject]$copy
     }
