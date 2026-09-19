@@ -1,6 +1,9 @@
 ﻿# Claude Code / Codex の hook から呼ばれ、最小限のセッション状態を OneDrive に書き出す。
 # プロンプト、実行コマンド、絶対パスは同期しない。
-param([Parameter(Mandatory)][ValidateSet('claude', 'codex')][string]$Tool)
+param(
+    [Parameter(Mandatory)][ValidateSet('claude', 'codex')][string]$Tool,
+    [string]$InputPath
+)
 . $PSScriptRoot\dashboard-common.ps1
 
 function Set-ProjectMetadata($state, [string]$cwd) {
@@ -60,7 +63,8 @@ function Update-HookHealth([string]$directory, $dashboardHost, [string]$now) {
 
 try {
     [Console]::InputEncoding = [Text.Encoding]::UTF8
-    $event = [Console]::In.ReadToEnd() | ConvertFrom-Json
+    $eventInput = if ($InputPath) { Get-Content -LiteralPath $InputPath -Raw } else { [Console]::In.ReadToEnd() }
+    $event = $eventInput | ConvertFrom-Json
     if (-not $event.session_id -or -not $env:OneDrive) { exit 0 }
     if ($event.agent_id -or $event.agent_type) { exit 0 }
 

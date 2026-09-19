@@ -300,6 +300,7 @@ class HttpApiTests(unittest.TestCase):
 
 class HookStateTransitionTests(unittest.TestCase):
     powershell = shutil.which("powershell") or shutil.which("pwsh")
+    wscript = shutil.which("wscript")
 
     def setUp(self):
         if not self.powershell:
@@ -318,6 +319,20 @@ class HookStateTransitionTests(unittest.TestCase):
         before = set((self.root / "agent-dashboard").glob(pattern)) if (self.root / "agent-dashboard").exists() else set()
         subprocess.run(
             [self.powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(Path(__file__).parents[1] / "hook" / "dashboard-hook.ps1"), "-Tool", tool],
+            input=json.dumps(event), text=True, encoding="utf-8", env=self.environment, check=True, capture_output=True,
+        )
+        after = set((self.root / "agent-dashboard").glob(pattern))
+        changed = after - before
+        self.last_session_paths[tool] = next(iter(changed)) if changed else self.last_session_paths.get(tool)
+
+    def send_with_launcher(self, event, tool="claude"):
+        if not self.wscript:
+            self.skipTest("Windows Script Host is required for launcher tests")
+        pattern = f"*/{tool}-*.json"
+        before = set((self.root / "agent-dashboard").glob(pattern)) if (self.root / "agent-dashboard").exists() else set()
+        hook_root = Path(__file__).parents[1] / "hook"
+        subprocess.run(
+            [self.wscript, "//B", "//NoLogo", str(hook_root / "dashboard-hook-launcher.vbs"), str(hook_root / "dashboard-hook.ps1"), tool],
             input=json.dumps(event), text=True, encoding="utf-8", env=self.environment, check=True, capture_output=True,
         )
         after = set((self.root / "agent-dashboard").glob(pattern))
@@ -344,6 +359,13 @@ class HookStateTransitionTests(unittest.TestCase):
         self.assertNotIn("session_id", state)
         self.assertNotIn("raw/session-id", path.name)
         self.assertEqual("project-", state["project_id"][:8])
+
+    def test_windowless_launcher_forwards_hook_input(self):
+        self.send_with_launcher(self.event("UserPromptSubmit"), "codex")
+
+        _, state = self.session("codex")
+
+        self.assertEqual("running", state["state"])
 
     def test_tool_failure_is_distinct_from_turn_failure(self):
         self.send(self.event("UserPromptSubmit"))

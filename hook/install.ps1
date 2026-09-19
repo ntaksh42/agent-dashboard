@@ -6,6 +6,7 @@ if (-not $env:OneDrive) { throw 'OneDrive 環境変数が見つかりません�
 $bin = Join-Path $env:OneDrive 'agent-dashboard-bin'
 $data = Join-Path $env:OneDrive 'agent-dashboard'
 $hook = Join-Path $bin 'dashboard-hook.ps1'
+$launcher = Join-Path $bin 'dashboard-hook-launcher.vbs'
 $heartbeat = Join-Path $bin 'dashboard-heartbeat.ps1'
 $taskName = 'Agent Dashboard Heartbeat'
 
@@ -38,7 +39,7 @@ function Set-Hooks([string]$path, [string]$tool, [string[]]$events, [string[]]$a
     } else { [pscustomobject]@{} }
     if (-not $cfg.PSObject.Properties['hooks']) { $cfg | Add-Member hooks ([pscustomobject]@{}) }
 
-    $command = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$hook`" -Tool $tool"
+    $command = "wscript.exe //B //NoLogo `"$launcher`" `"$hook`" $tool"
     foreach ($eventName in $events) {
         $groups = @(Remove-DashboardHandlers $cfg.hooks.$eventName)
         if (-not $Uninstall) {
@@ -54,7 +55,7 @@ function Set-Hooks([string]$path, [string]$tool, [string[]]$events, [string[]]$a
 }
 
 function Install-Heartbeat {
-    $taskCommand = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$heartbeat`""
+    $taskCommand = "wscript.exe //B //NoLogo `"$launcher`" `"$heartbeat`""
     & schtasks.exe /Create /TN $taskName /SC MINUTE /MO 1 /TR $taskCommand /F | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'heartbeat タスクの作成に失敗しました。' }
     & $heartbeat
@@ -74,7 +75,7 @@ if ($Uninstall) {
 
 $null = New-Item -ItemType Directory -Force $bin, $data
 if ((Resolve-Path $PSScriptRoot).Path -ne (Resolve-Path $bin).Path) {
-    Copy-Item (Join-Path $PSScriptRoot 'dashboard-common.ps1'), (Join-Path $PSScriptRoot 'dashboard-hook.ps1'), (Join-Path $PSScriptRoot 'dashboard-heartbeat.ps1'), $PSCommandPath $bin -Force
+    Copy-Item (Join-Path $PSScriptRoot 'dashboard-common.ps1'), (Join-Path $PSScriptRoot 'dashboard-hook.ps1'), (Join-Path $PSScriptRoot 'dashboard-hook-launcher.vbs'), (Join-Path $PSScriptRoot 'dashboard-heartbeat.ps1'), $PSCommandPath $bin -Force
     Write-Host "published: $bin"
 }
 attrib +P -U $bin /S /D
