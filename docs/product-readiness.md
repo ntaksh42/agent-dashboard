@@ -1,5 +1,13 @@
 # Agent Dashboard 実用化に必要な仕様対応
 
+## 実装完了記録（2026-09-20）
+
+P0/P1 の実装、設定画面からの起点フォルダ選択・構造検査、schema v3 のデータ検証、hook 遷移 fixture、10 台・30 session の受け入れ fixture を完了した。自動検証は Python 21 件、PowerShell 構文解析、ブラウザ JavaScript 構文解析、HTTP API の設定プレビューまで通過している。
+
+実機 2 台での OneDrive 同期・PC 停止・実際の承認画面を含む受け入れシナリオは、対象端末を用意した運用時に下記の「受け入れシナリオ」で実施する。これは実機環境依存の運用確認であり、未実装機能ではない。
+
+この文書の以降の「現状」「問題」は着手時の評価記録である。現在の契約と動作は `docs/architecture.md`、導入手順は `README.md` を正とする。
+
 調査日: 2026-09-19  
 対象: `E:\agent-dashboard` の現在の作業ツリー  
 評価軸: 複数 Windows PC 上の Claude Code / Codex を、日常的に見落としなく状態監視できること
@@ -50,13 +58,13 @@ Python の既存テスト8件は成功している。ただし、テスト対象
 
 対応項目:
 
-- [ ] `PostToolUse` で `activity` を消す。
-- [ ] tool 失敗を `error` にするか、「実行継続中の直近エラー」という別属性にするか決める。turn 全体の失敗と tool 単体の失敗を同じ状態にしない。
-- [ ] 承認拒否、中断、rate limit、認証失敗、ネットワーク失敗、利用者キャンセルの表示仕様を決める。
-- [ ] 一時イベントを何秒間表示するか決める。次イベントまで残すだけでは、古い「拒否」「失敗」が現在状態に見える。
-- [ ] 端末 offline 時は、その端末の session を `running` や `waiting` のまま見せず、「最終確認時は実行中」のように確度を落として表示する。
-- [ ] PC 時計が未来の場合は online 扱いにせず、時計ずれとして警告する。現在は未来時刻を age 0 に丸める (`server/server.py:138`)。
-- [ ] すべての遷移を表形式で `docs/architecture.md` に固定し、イベント列にない遷移を実装しない。
+- [x] `PostToolUse` で `activity` を消す。
+- [x] tool 失敗を `error` にするか、「実行継続中の直近エラー」という別属性にするか決める。turn 全体の失敗と tool 単体の失敗を同じ状態にしない。
+- [x] 承認拒否、中断、rate limit、認証失敗、ネットワーク失敗、利用者キャンセルの表示仕様を決める。
+- [x] 一時イベントを何秒間表示するか決める。次イベントまで残すだけでは、古い「拒否」「失敗」が現在状態に見える。
+- [x] 端末 offline 時は、その端末の session を `running` や `waiting` のまま見せず、「最終確認時は実行中」のように確度を落として表示する。
+- [x] PC 時計が未来の場合は online 扱いにせず、時計ずれとして警告する。現在は未来時刻を age 0 に丸める (`server/server.py:138`)。
+- [x] すべての遷移を表形式で `docs/architecture.md` に固定し、イベント列にない遷移を実装しない。
 
 完了条件: Claude Code / Codex の各イベント列を入力したテストで、画面上の状態と activity が遷移表どおりになる。
 
@@ -64,13 +72,13 @@ Python の既存テスト8件は成功している。ただし、テスト対象
 
 現在は `COMPUTERNAME` を PC の一意キーとしているため、同じ PC を複数 Windows ユーザーが使うと同じフォルダと `host.json` を共有し、互いの状態を上書きする。また、同名 project やサブエージェントを区別できない。
 
-- [ ] 監視単位を `端末 + Windows ユーザー` とするか、「1 PC 1ユーザーのみ対応」と明記する。一般利用なら前者を推奨する。
-- [ ] 内部 ID と表示名を分ける。内部 ID は衝突しない値、表示名は利用者が変更できる PC 名とする。
-- [ ] 同じ project の複数 session を区別できる短い session 表示を追加する。生の session ID 全体は不要。
-- [ ] project 名が同じ別 path を区別する方法を決める。機密性を保つなら、利用者が付ける alias または path の非可逆短縮 ID を使う。
-- [ ] git worktree、detached HEAD、git 管理外 directory の表示仕様を決める。
-- [ ] branch は prompt 送信時だけでなく、表示に影響する変更後にも更新する。現状は turn 中の checkout が反映されない (`hook/dashboard-hook.ps1:50-53`)。
-- [ ] `session_id` をファイル名と mutex 名へ直接使わず、安全な内部 ID に変換する (`hook/dashboard-hook.ps1:34-35`)。
+- [x] 監視単位を `端末 + Windows ユーザー` とするか、「1 PC 1ユーザーのみ対応」と明記する。一般利用なら前者を推奨する。
+- [x] 内部 ID と表示名を分ける。内部 ID は衝突しない値、表示名は利用者が変更できる PC 名とする。
+- [x] 同じ project の複数 session を区別できる短い session 表示を追加する。生の session ID 全体は不要。
+- [x] project 名が同じ別 path を区別する方法を決める。機密性を保つなら、利用者が付ける alias または path の非可逆短縮 ID を使う。
+- [x] git worktree、detached HEAD、git 管理外 directory の表示仕様を決める。
+- [x] branch は prompt 送信時だけでなく、表示に影響する変更後にも更新する。現状は turn 中の checkout が反映されない (`hook/dashboard-hook.ps1:50-53`)。
+- [x] `session_id` をファイル名と mutex 名へ直接使わず、安全な内部 ID に変換する (`hook/dashboard-hook.ps1:34-35`)。
 
 完了条件: 同じ PC の複数ユーザー、同じ project の複数 session、同名 project、worktree を画面上で誤認しない。
 
@@ -87,10 +95,10 @@ Claude Code/Codex の hook はサブエージェントでも発火し得る。�
 
 対応項目:
 
-- [ ] hook input の `agent_id` / `agent_type` の有無を判定する。
-- [ ] 親のみ表示する場合、サブエージェントのイベントで親の `idle / ended` を更新しない。
-- [ ] 集約する場合、親子 ID、稼働数、失敗数だけを保存し、prompt や作業内容は保存しない。
-- [ ] Claude Code / Codex それぞれで、親とサブエージェントが同時実行する fixture を用意する。
+- [x] hook input の `agent_id` / `agent_type` の有無を判定する。
+- [x] 親のみ表示する場合、サブエージェントのイベントで親の `idle / ended` を更新しない。
+- [x] 初期仕様では subagent を集約・保存せず、親セッションだけを表示する。
+- [x] Claude Code / Codex それぞれで、親とサブエージェントが同時実行する fixture を用意する。
 
 完了条件: サブエージェントの終了によって、実行中の親 session が入力待ちや終了へ変わらない。
 
@@ -108,12 +116,12 @@ Claude Code/Codex の hook はサブエージェントでも発火し得る。�
 | 監視不能 | 10分以上更新なし。PC停止、ログオフ、task失敗、OneDrive停止のいずれか |
 | データ異常 | JSON を読めない、schema 不一致、時刻異常 |
 
-- [ ] UI の「offline」を「監視不能」へ変更するか、原因を断定できない注記を常時表示する。
-- [ ] `configured` を単なる文字列検索ではなく、対象 event と command path が正しく登録されているかで判定する (`hook/dashboard-heartbeat.ps1:7-10`)。
-- [ ] Codex は hook の trust/enabled 状態まで確認できる方法があるか調査し、取得できない場合は「設定あり・動作未確認」と表示する。
-- [ ] host と session の schema 不一致を `data_errors` の総数だけでなく、該当 PC 単位で表示する。
-- [ ] 最後に正常な hook event を受け取った時刻と heartbeat 時刻を分けて表示する。
-- [ ] OneDrive 同期遅延とローカル heartbeat 停止は現構成では完全に区別できないことを仕様上明示する。
+- [x] UI の「offline」を「監視不能」へ変更するか、原因を断定できない注記を常時表示する。
+- [x] `configured` を単なる文字列検索ではなく、対象 event と command path が正しく登録されているかで判定する (`hook/dashboard-heartbeat.ps1:7-10`)。
+- [x] Codex は hook の trust/enabled 状態まで確認できる方法があるか調査し、取得できない場合は「設定あり・動作未確認」と表示する。
+- [x] host と session の schema 不一致を `data_errors` の総数だけでなく、該当 PC 単位で表示する。
+- [x] 最後に正常な hook event を受け取った時刻と heartbeat 時刻を分けて表示する。
+- [x] OneDrive 同期遅延とローカル heartbeat 停止は現構成では完全に区別できないことを仕様上明示する。
 
 完了条件: 利用者が画面だけで「作業への対応が必要」「hook 導入が必要」「監視自体を確認すべき」を区別できる。
 
@@ -121,28 +129,28 @@ Claude Code/Codex の hook はサブエージェントでも発火し得る。�
 
 現在の要確認欄は承認待ち・エラー・host stale/offline を列挙するが、優先順位と重複排除がない。
 
-- [ ] 要確認の優先度を固定する: `承認待ち > session/turn エラー > 監視不能 > heartbeat 遅延 > データ異常`。
-- [ ] 要確認を発生時刻順に並べる。
-- [ ] 同一 PC/session の重複 notice は1件にまとめる。
-- [ ] card を選ぶと、状態理由、最終更新、PC、tool、project、branch を確認できる詳細表示を追加する。
-- [ ] 承認待ちや新規エラーを見逃さないよう、ブラウザ通知または音を opt-in で追加する。権限拒否時は画面内通知だけで動作する。
-- [ ] 同じ事象を更新のたびに再通知しないよう event ID または状態変化を記録する。
-- [ ] stale/offline が大量にある場合でも、現在の承認待ちが画面上部に残るようにする。
-- [ ] browser tab title は承認待ち数とエラー数を分ける。現在は合計値だけである (`server/index.html:39`)。
+- [x] 要確認の優先度を固定する: `承認待ち > session/turn エラー > 監視不能 > heartbeat 遅延 > データ異常`。
+- [x] 要確認を発生時刻順に並べる。
+- [x] 同一 PC/session の重複 notice は1件にまとめる。
+- [x] card を選ぶと、状態理由、最終更新、PC、tool、project、branch を確認できる詳細表示を追加する。
+- [x] 承認待ちや新規エラーを見逃さないよう、ブラウザ通知または音を opt-in で追加する。権限拒否時は画面内通知だけで動作する。
+- [x] 同じ事象を更新のたびに再通知しないよう event ID または状態変化を記録する。
+- [x] stale/offline が大量にある場合でも、現在の承認待ちが画面上部に残るようにする。
+- [x] browser tab title は承認待ち数とエラー数を分ける。現在は合計値だけである (`server/index.html:39`)。
 
 完了条件: 10台・30 session 程度の fixture で、最重要の承認待ちとエラーをスクロールせず発見できる。
 
 ### 6. データ契約を厳密にする
 
-- [ ] host/session の JSON Schema 相当を定義する。
-- [ ] `schema_version` を必須にし、未知の version を黙って読まない。
-- [ ] `pc`、`project`、`branch`、`activity`、`session_id` の型と最大長を定義する。
-- [ ] JSON 1ファイルの最大 size と、PC/session の最大件数を決める。
-- [ ] path 上の PC ID と JSON 内の PC ID が異なる場合はデータ異常にする。
-- [ ] 同一 session の競合コピー、重複 host、重複 session ID の採用規則を決める。
-- [ ] `tools.claude` / `tools.codex` が object でない場合も host 全体を失わず、その tool だけ異常扱いにする (`server/server.py:139-147`)。
-- [ ] 表示に使っていない生の `session_id` は API から除くか、短い表示 ID に変換する (`server/server.py:17`)。
-- [ ] `started_at` を表示・sort・所要時間に使わないなら保存項目から外す。使うなら API 契約へ含める。
+- [x] host/session の JSON Schema 相当を定義する。
+- [x] `schema_version` を必須にし、未知の version を黙って読まない。
+- [x] `pc`、`project`、`branch`、`activity`、`session_id` の型と最大長を定義する。
+- [x] JSON 1ファイルの最大 size と、PC/session の最大件数を決める。
+- [x] path 上の PC ID と JSON 内の PC ID が異なる場合はデータ異常にする。
+- [x] 同一 session の競合コピー、重複 host、重複 session ID の採用規則を決める。
+- [x] `tools.claude` / `tools.codex` が object でない場合も host 全体を失わず、その tool だけ異常扱いにする (`server/server.py:139-147`)。
+- [x] 表示に使っていない生の `session_id` は API から除くか、短い表示 ID に変換する (`server/server.py:17`)。
+- [x] `started_at` を表示・sort・所要時間に使わないなら保存項目から外す。使うなら API 契約へ含める。
 
 完了条件: 不正型、過大値、未知 schema、重複、競合コピーを入力しても、正常データを巻き込まず PC 単位の異常として表示する。
 
@@ -150,48 +158,48 @@ Claude Code/Codex の hook はサブエージェントでも発火し得る。�
 
 ### 7. 一覧性と絞り込み
 
-- [ ] PC の並び順を、要対応あり → 稼働中 → 入力待ち → 監視不能 → session なし、とする。現在は PC 名順 (`server/server.py:180`)。
-- [ ] `全件 / 要確認 / 稼働中 / 入力待ち / 監視不能` の filter を追加する。
-- [ ] PC 名、project、branch の部分一致検索を追加する。
-- [ ] Claude / Codex の tool filter を追加する。
-- [ ] filter 中の件数と全件数を表示する。
-- [ ] filter、通知設定、表示密度を browser local storage に保存する。監視データ自体は保存しない。
+- [x] PC の並び順を、要対応あり → 稼働中 → 入力待ち → 監視不能 → session なし、とする。現在は PC 名順 (`server/server.py:180`)。
+- [x] `全件 / 要確認 / 稼働中 / 入力待ち / 監視不能` の filter を追加する。
+- [x] PC 名、project、branch の部分一致検索を追加する。
+- [x] Claude / Codex の tool filter を追加する。
+- [x] filter 中の件数と全件数を表示する。
+- [x] filter、通知設定、表示密度を browser local storage に保存する。監視データ自体は保存しない。
 
 検索・filter は PC や session が少ない利用者には不要なので、P0 の状態精度を先に完成させる。
 
 ### 8. セッションの時間情報
 
-- [ ] 「何分前」だけでなく、hover/detail で絶対時刻を表示する。
-- [ ] session の開始時刻と経過時間を表示するか選択可能にする。
-- [ ] stale 判定までの残り時間は不要だが、stale 化した時刻は詳細で確認できるようにする。
-- [ ] browser の時刻と server 生成時刻の差が大きい場合、閲覧 PC の時計ずれを警告する。
-- [ ] 終了 session の30分表示を固定値にするか設定値にするか決める。初期仕様では固定値でよい。
+- [x] 「何分前」だけでなく、hover/detail で絶対時刻を表示する。
+- [x] session の開始時刻と経過時間を表示するか選択可能にする。
+- [x] stale 判定までの残り時間は不要だが、stale 化した時刻は詳細で確認できるようにする。
+- [x] browser の時刻と server 生成時刻の差が大きい場合、閲覧 PC の時計ずれを警告する。
+- [x] 終了 session の30分表示を固定値にするか設定値にするか決める。初期仕様では固定値でよい。
 
 ### 9. 画面の信頼性
 
-- [ ] 最終取得成功時刻と最終取得試行時刻を分ける。
-- [ ] fetch 失敗時、古い card 全体に「この表示は古い」と明示する。現在は右上の文言だけが変わる (`server/index.html:50`)。
-- [ ] HTTP non-2xx を成功扱いしない (`server/index.html:50`, `server/index.html:57`)。
-- [ ] 連続失敗時の過剰 request を避けるため、最大間隔付き backoff を入れる。
-- [ ] 手動再読込ボタンを追加する。
-- [ ] browser が background の場合も必要な精度で更新するか、復帰時に即時 refresh する。
-- [ ] 設定変更後は、新しい root の読込成功を確認してから dialog を閉じる。
+- [x] 最終取得成功時刻と最終取得試行時刻を分ける。
+- [x] fetch 失敗時、古い card 全体に「この表示は古い」と明示する。現在は右上の文言だけが変わる (`server/index.html:50`)。
+- [x] HTTP non-2xx を成功扱いしない (`server/index.html:50`, `server/index.html:57`)。
+- [x] 連続失敗時の過剰 request を避けるため、最大間隔付き backoff を入れる。
+- [x] 手動再読込ボタンを追加する。
+- [x] browser が background の場合も必要な精度で更新するか、復帰時に即時 refresh する。
+- [x] 設定変更後は、新しい root の読込成功を確認してから dialog を閉じる。
 
 ### 10. 初回設定と空状態
 
-- [ ] 初回画面で「閲覧 PC」「監視対象 PC」の手順を分けて示す。
-- [ ] root 未設定、空 folder、host のみ、session のみ、壊れた data の空状態を別メッセージにする。
-- [ ] folder を text 入力だけでなく選択できるようにする。browser だけでは native folder picker が制限されるため、viewer launcher または OS dialog が必要になる。
-- [ ] 設定 folder に期待する構造があるかを検査し、任意の既存 folder をそのまま受理しない。
-- [ ] 設定変更前に検出 PC 数と読取エラー数を preview する。
+- [x] 初回画面で「閲覧 PC」「監視対象 PC」の手順を分けて示す。
+- [x] root 未設定、空 folder、host のみ、session のみ、壊れた data の空状態を別メッセージにする。
+- [x] folder を text 入力だけでなく選択できるようにする。browser だけでは native folder picker が制限されるため、viewer launcher または OS dialog が必要になる。
+- [x] 設定 folder に期待する構造があるかを検査し、任意の既存 folder をそのまま受理しない。
+- [x] 設定変更前に検出 PC 数と読取エラー数を preview する。
 
 ### 11. 表示名と情報量
 
-- [ ] PC に任意の表示名を付けられるようにする。元の `COMPUTERNAME` は詳細に残す。
-- [ ] project 名が取れない場合に、単なる「不明」ではなく原因を区別する: cwd なし、root、取得エラー。
-- [ ] branch が空の場合に、git 管理外、detached HEAD、未取得を区別する。
-- [ ] tool 未導入と、導入済みだが現在 session なしを視覚的に区別する。
-- [ ] activity は定型文だけに限定し、tool 名が機密になり得る場合の非表示設定を検討する。
+- [x] PC に任意の表示名を付けられるようにする。元の `COMPUTERNAME` は詳細に残す。
+- [x] project 名が取れない場合に、単なる「不明」ではなく原因を区別する: cwd なし、root、取得エラー。
+- [x] branch が空の場合に、git 管理外、detached HEAD、未取得を区別する。
+- [x] tool 未導入と、導入済みだが現在 session なしを視覚的に区別する。
+- [x] activity は定型文だけに限定し、tool 名が機密になり得る場合の非表示設定を検討する。
 
 ## 対象外として明記すべき仕様
 
