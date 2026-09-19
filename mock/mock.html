@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Dashboard (mock)</title>
+<style>
+  :root {
+    --bg: #f3f4f6; --surface: #ffffff; --surface2: #f8f9fb; --border: #e2e5ea;
+    --text: #15181d; --text2: #4b5563; --text3: #8a919c;
+    --waiting: #c47a00; --waiting-bg: #fff6e5; --running: #2463eb; --idle: #16875a; --ended: #9aa1ab;
+    --claude: #c15f3c; --codex: #6b7280;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1014; --surface: #171a20; --surface2: #1e2229; --border: #2a2f38;
+      --text: #eceef1; --text2: #b3bac4; --text3: #7a828e;
+      --waiting: #f5a524; --waiting-bg: #2a2112; --running: #5b9bff; --idle: #3fbf85; --ended: #6b7280;
+      --claude: #e0876a; --codex: #a3aab5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px 24px 40px; background: var(--bg); color: var(--text);
+         font: 14px/1.55 "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif; }
+  code, .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
+
+  /* ヘッダー */
+  header { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 24px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .01em; }
+  .stats { display: flex; gap: 10px; }
+  .stat { display: flex; align-items: baseline; gap: 8px; background: var(--surface); border: 1px solid var(--border);
+          border-radius: 10px; padding: 6px 14px; }
+  .stat b { font-size: 22px; line-height: 1; color: var(--c); font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--text2); }
+  .stat.zero b { color: var(--text3); }
+  .updated { margin-left: auto; font-size: 12px; color: var(--text3); }
+
+  /* セクション */
+  .section-title { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600;
+                   color: var(--text2); margin: 0 0 10px; letter-spacing: .04em; }
+  .section-title .count { font-weight: normal; color: var(--text3); }
+  .attention { margin-bottom: 28px; }
+  .attention .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; }
+
+  .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; align-items: start; }
+  .column { display: flex; flex-direction: column; gap: 10px; }
+  .pc { display: flex; align-items: center; gap: 8px; padding: 0 2px 8px; border-bottom: 1px solid var(--border); }
+  .pc h2 { font-size: 15px; margin: 0; }
+  .pc .sync { margin-left: auto; font-size: 12px; color: var(--text3); display: flex; align-items: center; gap: 6px; }
+  .pc .sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+  .empty { font-size: 12px; color: var(--text3); padding: 8px 2px; }
+
+  /* カード */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+          display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .card.waiting { background: var(--waiting-bg); border-color: var(--waiting); }
+  .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--c); }
+  .state i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .state.running i { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .state small { font-weight: normal; color: var(--text3); font-size: 12px; }
+  .tool { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--t); border: 1px solid var(--t);
+          border-radius: 4px; padding: 0 6px; opacity: .9; }
+  .pcname { font-size: 12px; color: var(--text2); }
+  .project { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .branch { color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prompt { color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .recent { font-size: 12.5px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent::before { content: "直近 "; color: var(--text3); }
+  .activity { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text2); }
+  .card.waiting .activity { border-color: var(--waiting); color: var(--text); }
+  .activity::before { content: "$ "; color: var(--text3); }
+
+  details.ended { margin-top: 28px; color: var(--text3); font-size: 13px; }
+  details.ended summary { cursor: pointer; }
+  details.ended ul { margin: 8px 0 0; padding-left: 18px; }
+  .note { margin-top: 32px; font-size: 12px; color: var(--text3); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Dashboard</h1>
+  <div class="stats" id="stats"></div>
+  <span class="updated" id="updated"></span>
+</header>
+<section class="attention" id="attention"></section>
+<div class="columns" id="columns"></div>
+<details class="ended" id="ended"></details>
+<div class="note">モック：表示内容はすべて架空のサンプルデータです。</div>
+<script>
+const STATES = { waiting: '承認待ち', running: '実行中', idle: '入力待ち', ended: '終了' };
+const ORDER = { waiting: 0, running: 1, idle: 2, ended: 3 };
+const min = m => new Date(Date.now() - m * 60000).toISOString();
+const PCS = ['DEV-PC01', 'DEV-PC02', 'BUILD-PC03'];
+const SESSIONS = [
+  { pc: 'DEV-PC01', tool: 'claude', cwd: 'C:\\src\\order-api', branch: 'feature/cancel-order', state: 'waiting', updated_at: min(0.5),
+    first_prompt: '注文キャンセル API を追加して。既存の返金処理と整合を取ること',
+    last_prompt: 'テストも追加して', activity: 'dotnet test tests/OrderApi.Tests' },
+  { pc: 'DEV-PC01', tool: 'codex', cwd: 'C:\\src\\order-web', branch: 'main', state: 'running', updated_at: min(0.1),
+    first_prompt: '注文一覧画面にキャンセルボタンを追加', last_prompt: null, activity: 'apply_patch src/pages/Orders.tsx' },
+  { pc: 'DEV-PC01', tool: 'claude', cwd: 'C:\\src\\dotfiles', branch: 'main', state: 'idle', updated_at: min(42),
+    first_prompt: 'PowerShell プロファイルの起動を速くしたい', last_prompt: '計測結果をまとめて', activity: null },
+  { pc: 'DEV-PC02', tool: 'claude', cwd: 'C:\\src\\batch-jobs', branch: 'fix/timeout', state: 'running', updated_at: min(0.3),
+    first_prompt: '夜間バッチがタイムアウトする原因を調べて', last_prompt: 'ログの 2:13 以降を詳しく',
+    activity: 'grep "TimeoutException" logs/' },
+  { pc: 'DEV-PC02', tool: 'codex', cwd: 'C:\\src\\infra', branch: 'chore/bicep-upgrade', state: 'waiting', updated_at: min(3),
+    first_prompt: 'Bicep テンプレートを最新 API バージョンに更新', last_prompt: null,
+    activity: 'az deployment group what-if -g rg-dev -f main.bicep' },
+  { pc: 'BUILD-PC03', tool: 'codex', cwd: 'C:\\src\\report-gen', branch: 'main', state: 'idle', updated_at: min(8),
+    first_prompt: 'PDF 出力のフォント崩れを直して', last_prompt: '日本語フォントを埋め込む方式で', activity: null },
+  { pc: 'BUILD-PC03', tool: 'claude', cwd: 'C:\\src\\report-gen', branch: 'main', state: 'ended', updated_at: min(15),
+    first_prompt: 'README の手順を最新化', last_prompt: null, activity: null },
+];
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const dur = iso => {
+  const sec = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  return sec < 60 ? `${sec|0}秒` : sec < 3600 ? `${sec/60|0}分` : `${sec/3600|0}時間`;
+};
+const base = p => (p || '').split(/[\\/]/).filter(Boolean).pop() || p;
+const TOOL = { claude: ['Claude Code', 'var(--claude)'], codex: ['Codex', 'var(--codex)'] };
+
+function card(s, withPc) {
+  const [toolName, toolColor] = TOOL[s.tool];
+  return `<div class="card ${s.state}">
+    <div class="row">
+      <span class="state ${s.state}" style="--c: var(--${s.state})"><i></i>${STATES[s.state]}<small>${dur(s.updated_at)}</small></span>
+      ${withPc ? `<span class="pcname">${esc(s.pc)}</span>` : ''}
+      <span class="tool" style="--t: ${toolColor}">${toolName}</span>
+    </div>
+    <div class="row" title="${esc(s.cwd)}">
+      <span class="project">${esc(base(s.cwd))}</span>
+      ${s.branch ? `<span class="branch mono">${esc(s.branch)}</span>` : ''}
+    </div>
+    <div class="prompt">${esc(s.first_prompt)}</div>
+    ${s.last_prompt ? `<div class="recent">${esc(s.last_prompt)}</div>` : ''}
+    ${s.activity ? `<div class="activity mono">${esc(s.activity)}</div>` : ''}
+  </div>`;
+}
+
+function render() {
+  const sorted = [...SESSIONS].sort((a, b) => ORDER[a.state] - ORDER[b.state] || Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  const live = sorted.filter(s => s.state !== 'ended');
+  const waiting = live.filter(s => s.state === 'waiting');
+  const count = st => live.filter(s => s.state === st).length;
+
+  document.getElementById('stats').innerHTML = ['waiting', 'running', 'idle'].map(st =>
+    `<div class="stat ${count(st) ? '' : 'zero'}" style="--c: var(--${st})"><b>${count(st)}</b><span>${STATES[st]}</span></div>`).join('');
+  document.getElementById('updated').textContent = `最終更新 ${new Date().toLocaleTimeString()}`;
+  document.title = waiting.length ? `(${waiting.length}) Agent Dashboard` : 'Agent Dashboard';
+
+  document.getElementById('attention').innerHTML = waiting.length
+    ? `<div class="section-title" style="color: var(--waiting)">要対応<span class="count">${waiting.length}</span></div>
+       <div class="grid">${waiting.map(s => card(s, true)).join('')}</div>`
+    : '';
+
+  document.getElementById('columns').innerHTML = PCS.map(pc => {
+    const all = SESSIONS.filter(s => s.pc === pc);
+    const rest = live.filter(s => s.pc === pc && s.state !== 'waiting');
+    const lastSync = Math.max(...all.map(s => Date.parse(s.updated_at)));
+    const fresh = Date.now() - lastSync < 5 * 60000;
+    return `<div class="column">
+      <div class="pc"><h2>${esc(pc)}</h2>
+        <span class="sync" style="--c: ${fresh ? 'var(--idle)' : 'var(--ended)'}"><i></i>同期 ${dur(new Date(lastSync).toISOString())}前</span></div>
+      ${rest.map(s => card(s, false)).join('') || '<div class="empty">承認待ち以外のセッションはありません</div>'}
+    </div>`;
+  }).join('');
+
+  const ended = sorted.filter(s => s.state === 'ended');
+  const el = document.getElementById('ended');
+  el.hidden = !ended.length;
+  const open = el.open;
+  el.innerHTML = `<summary>終了したセッション（${ended.length}）</summary><ul>${ended.map(s =>
+    `<li>${esc(s.pc)} / ${esc(base(s.cwd))} — ${esc(s.first_prompt)}（${dur(s.updated_at)}前）</li>`).join('')}</ul>`;
+  el.open = open;
+}
+render();
+setInterval(render, 2000);
+</script>
+</body>
+</html>

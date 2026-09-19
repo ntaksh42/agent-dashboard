@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Dashboard 設計概略</title>
+<style>
+  :root {
+    --bg: #f3f4f6; --surface: #fff; --surface2: #f8f9fb; --border: #d9dde3;
+    --text: #15181d; --text2: #4b5563; --text3: #8a919c;
+    --accent: #2463eb; --accent-bg: #eaf1ff; --warn: #c47a00; --warn-bg: #fff6e5; --ok: #16875a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1014; --surface: #171a20; --surface2: #1e2229; --border: #2f3540;
+      --text: #eceef1; --text2: #b3bac4; --text3: #7a828e;
+      --accent: #5b9bff; --accent-bg: #16223a; --warn: #f5a524; --warn-bg: #2a2112; --ok: #3fbf85;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+         font: 14px/1.6 "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif; }
+  main { max-width: 1160px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 32px 0 10px; }
+  .lead { color: var(--text2); margin: 0 0 16px; }
+  code, .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  svg { width: 100%; height: auto; display: block; }
+  svg text { fill: var(--text); font-family: "Segoe UI", "Yu Gothic UI", sans-serif; font-size: 13px; }
+  svg .sub { fill: var(--text2); font-size: 11.5px; }
+  svg .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; fill: var(--text2); }
+  svg .label { fill: var(--text3); font-size: 11.5px; }
+  svg .zone { fill: var(--surface2); stroke: var(--border); }
+  svg .zone-title { font-weight: 700; font-size: 14px; }
+  svg .node { fill: var(--surface); stroke: var(--border); stroke-width: 1.2; }
+  svg .node.key { fill: var(--accent-bg); stroke: var(--accent); }
+  svg .node.cloud { fill: var(--warn-bg); stroke: var(--warn); }
+  svg .node.dashed { fill: none; stroke-dasharray: 5 4; }
+  svg .node-title { font-weight: 600; }
+  svg .edge { stroke: var(--text3); stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+  svg #arrow path { fill: var(--text3); }
+  svg .num { fill: var(--accent); font-weight: 700; font-size: 12px; }
+  svg .numbg { fill: var(--surface); stroke: var(--accent); }
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--surface2); font-size: 12.5px; color: var(--text2); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 0 8px; border: 1px solid currentColor; }
+  .s-waiting { color: var(--warn); } .s-running { color: var(--accent); } .s-idle { color: var(--ok); } .s-ended { color: var(--text3); }
+  .todo td:first-child { font-weight: 600; white-space: nowrap; }
+  ol.steps { margin: 12px 0 0; padding-left: 22px; color: var(--text2); }
+  ol.steps li { margin: 2px 0; }
+  ol.steps b { color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Agent Dashboard 設計概略</h1>
+  <p class="lead">複数 PC 上の Claude Code / Codex の状態を、OneDrive 経由で 1 台の PC に集めてブラウザで表示する。常駐プロセスは閲覧 PC の <code>server.py</code> だけ。</p>
+
+  <h2>全体構成とデータの流れ</h2>
+  <div class="panel">
+    <svg viewBox="0 0 1120 420" role="img" aria-label="全体構成図">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z"/>
+        </marker>
+      </defs>
+
+      <!-- 各PC -->
+      <rect class="zone" x="10" y="10" width="440" height="400" rx="12"/>
+      <text class="zone-title" x="30" y="38">各 PC（N 台・RDP 接続先）</text>
+      <text class="sub" x="30" y="56">追加するのは hook 設定とスクリプトだけ（常駐なし）</text>
+
+      <rect class="node" x="30" y="80" width="180" height="62" rx="8"/>
+      <text class="node-title" x="44" y="104">Claude Code CLI</text>
+      <text class="mono" x="44" y="124">~/.claude/settings.json</text>
+
+      <rect class="node" x="30" y="170" width="180" height="62" rx="8"/>
+      <text class="node-title" x="44" y="194">Codex CLI</text>
+      <text class="mono" x="44" y="214">~/.codex/hooks.json</text>
+
+      <rect class="node key" x="255" y="115" width="175" height="82" rx="8"/>
+      <text class="node-title" x="269" y="140">dashboard-hook.ps1</text>
+      <text class="sub" x="269" y="160">powershell.exe 5.1</text>
+      <text class="sub" x="269" y="178">stdin の JSON → 状態を更新</text>
+
+      <path class="edge" d="M210,111 C232,111 232,140 253,140"/>
+      <path class="edge" d="M210,201 C232,201 232,172 253,172"/>
+      <text class="label" x="200" y="160" text-anchor="middle">hook</text>
+
+      <rect class="node" x="120" y="290" width="310" height="82" rx="8"/>
+      <text class="node-title" x="134" y="314">OneDrive フォルダ（ローカル）</text>
+      <text class="mono" x="134" y="334">%OneDrive%\agent-dashboard\&lt;PC名&gt;\</text>
+      <text class="mono" x="134" y="352">  &lt;tool&gt;-&lt;session_id&gt;.json</text>
+
+      <path class="edge" d="M342,197 L342,288"/>
+      <text class="label" x="352" y="240">一時ファイルに書いて</text>
+      <text class="label" x="352" y="256">置き換え</text>
+
+      <!-- クラウド -->
+      <rect class="node cloud" x="485" y="170" width="150" height="80" rx="40"/>
+      <text class="node-title" x="560" y="204" text-anchor="middle">OneDrive</text>
+      <text class="sub" x="560" y="224" text-anchor="middle">同期: 数秒〜数十秒</text>
+      <path class="edge" d="M430,331 C470,331 470,236 483,226"/>
+      <text class="label" x="462" y="300" text-anchor="end">アップロード</text>
+
+      <!-- 閲覧PC -->
+      <rect class="zone" x="670" y="10" width="440" height="400" rx="12"/>
+      <text class="zone-title" x="690" y="38">閲覧 PC（1 台）</text>
+
+      <rect class="node dashed" x="690" y="60" width="400" height="44" rx="8"/>
+      <text class="sub" x="706" y="87">この PC の Claude Code / Codex も同じ hook で自分のフォルダに書き込む</text>
+
+      <rect class="node" x="690" y="170" width="220" height="80" rx="8"/>
+      <text class="node-title" x="704" y="194">OneDrive フォルダ（ローカル）</text>
+      <text class="mono" x="704" y="214">%OneDrive%\agent-dashboard\</text>
+      <text class="sub" x="704" y="234">全 PC 分の *.json が揃う</text>
+      <path class="edge" d="M635,210 L688,210"/>
+      <text class="label" x="661" y="200" text-anchor="middle">ダウンロード</text>
+
+      <rect class="node key" x="690" y="300" width="200" height="82" rx="8"/>
+      <text class="node-title" x="704" y="324">server.py</text>
+      <text class="sub" x="704" y="344">Python 標準ライブラリのみ</text>
+      <text class="mono" x="704" y="364">127.0.0.1:8765</text>
+      <path class="edge" d="M790,298 L790,252"/>
+      <text class="label" x="800" y="280">リクエストごとに読み込む</text>
+
+      <rect class="node" x="930" y="300" width="160" height="82" rx="8"/>
+      <text class="node-title" x="944" y="324">ブラウザ</text>
+      <text class="sub" x="944" y="344">index.html</text>
+      <text class="sub" x="944" y="364">2 秒ごとに再取得</text>
+      <path class="edge" d="M928,332 L892,332"/>
+      <text class="mono" x="890" y="400" text-anchor="middle">ブラウザ → server.py : GET /api/sessions</text>
+
+      <!-- 番号 -->
+      <g><circle class="numbg" cx="30" cy="80" r="11"/><text class="num" x="30" y="84" text-anchor="middle">1</text></g>
+      <g><circle class="numbg" cx="255" cy="115" r="11"/><text class="num" x="255" y="119" text-anchor="middle">2</text></g>
+      <g><circle class="numbg" cx="120" cy="290" r="11"/><text class="num" x="120" y="294" text-anchor="middle">3</text></g>
+      <g><circle class="numbg" cx="500" cy="175" r="11"/><text class="num" x="500" y="179" text-anchor="middle">4</text></g>
+      <g><circle class="numbg" cx="690" cy="300" r="11"/><text class="num" x="690" y="304" text-anchor="middle">5</text></g>
+      <g><circle class="numbg" cx="930" cy="300" r="11"/><text class="num" x="930" y="304" text-anchor="middle">6</text></g>
+    </svg>
+    <ol class="steps">
+      <li><b>hook 発火</b>：プロンプト送信・ツール実行前後・承認要求・停止などのたびに、CLI が JSON を stdin で渡してスクリプトを起動する</li>
+      <li><b>状態更新</b>：既存ファイルを読み、イベントに応じて状態・プロンプト・操作を更新する（セッション単位の Mutex で直列化）</li>
+      <li><b>書き出し</b>：<code>.tmp</code> に書いてから置き換える。読み手が書きかけを読まない。PC・セッションごとに別ファイルなので衝突コピーが出ない</li>
+      <li><b>同期</b>：OneDrive クライアントがアップロードし、閲覧 PC にダウンロードする。ここが最大の遅延要因</li>
+      <li><b>集約</b>：<code>server.py</code> は API が呼ばれるたびに全 JSON を読む。DB やキャッシュはなく、読めないファイルは次回に回す</li>
+      <li><b>表示</b>：ブラウザが 2 秒ごとに取得して描画する。承認待ちは「要対応」欄に集める</li>
+    </ol>
+  </div>
+
+  <h2>使っている仕組み</h2>
+  <table>
+    <tr><th style="width:22%">仕組み</th><th style="width:38%">使い方</th><th>選んだ理由・注意</th></tr>
+    <tr><td>Claude Code hooks</td><td><code>settings.json</code> に 7 イベントを登録。SessionEnd 以外は <code>async: true</code></td><td>公式の拡張点で、承認待ちを <code>PermissionRequest</code> で即時に検知できる。1 回約 0.6 秒かかるため非同期にしている</td></tr>
+    <tr><td>Codex hooks</td><td><code>~/.codex/hooks.json</code> に 8 イベントを登録</td><td>Claude Code とほぼ同じ形式なので同じスクリプトを使える。<b>初回は <code>/hooks</code> で信頼の承認が必要</b>。同期実行と思われる</td></tr>
+    <tr><td>PowerShell 5.1</td><td>hook スクリプトの実行環境</td><td>どの Windows にも標準で入っていて、他 PC にインストールが要らない。日本語を含むため UTF-8 BOM 付きで保存する</td></tr>
+    <tr><td>名前付き Mutex</td><td><code>Local\agent-dashboard-&lt;session&gt;</code></td><td>非同期 hook の同時書き込みで更新が失われるのを防ぐ（5 並列でテスト済み）</td></tr>
+    <tr><td>OneDrive</td><td>各 PC から閲覧 PC への転送経路</td><td>共有フォルダが作れない制約の代わり。全 PC で<b>同じ OneDrive アカウント</b>であることが前提。閲覧側は「常にこのデバイス上に保持」を推奨</td></tr>
+    <tr><td>Python <code>http.server</code></td><td>API と画面の配信（localhost のみ）</td><td>追加パッケージが不要。リアルタイム表示のみなので状態を持たない</td></tr>
+    <tr><td>ポーリング（fetch）</td><td>2 秒ごとに <code>/api/sessions</code> を取得</td><td>同期遅延が秒単位なので、SSE や WebSocket にしても体感は変わらない</td></tr>
+  </table>
+
+  <h2>イベントと状態の対応</h2>
+  <div class="grid2">
+    <table>
+      <tr><th>hook イベント</th><th>状態</th><th>記録する内容</th></tr>
+      <tr><td><code>SessionStart</code></td><td><span class="pill s-idle">入力待ち</span></td><td>1 日以上前のファイルを削除</td></tr>
+      <tr><td><code>UserPromptSubmit</code></td><td><span class="pill s-running">実行中</span></td><td>最初・直近のプロンプト、git ブランチ</td></tr>
+      <tr><td><code>PreToolUse</code></td><td><span class="pill s-running">実行中</span></td><td>操作（ツール名 + ファイル / コマンド）</td></tr>
+      <tr><td><code>PostToolUse</code></td><td><span class="pill s-running">実行中</span></td><td>承認後に「承認待ち」を解除する</td></tr>
+      <tr><td><code>PermissionRequest</code></td><td><span class="pill s-waiting">承認待ち</span></td><td>承認対象の操作</td></tr>
+      <tr><td><code>Stop</code> / <code>Interrupt</code></td><td><span class="pill s-idle">入力待ち</span></td><td>—</td></tr>
+      <tr><td><code>SessionEnd</code></td><td><span class="pill s-ended">終了</span></td><td>30 分後に画面から消える</td></tr>
+    </table>
+    <table>
+      <tr><th>状態ファイルの項目</th><th>内容</th></tr>
+      <tr><td><code>pc</code> / <code>tool</code> / <code>session_id</code></td><td>識別子</td></tr>
+      <tr><td><code>cwd</code> / <code>branch</code></td><td>作業ディレクトリ / git ブランチ</td></tr>
+      <tr><td><code>first_prompt</code></td><td>最初のプロンプト（200 文字で切る）＝セッションの見出し</td></tr>
+      <tr><td><code>last_prompt</code></td><td>直近のプロンプト（200 文字）</td></tr>
+      <tr><td><code>activity</code></td><td>直近の操作（160 文字）</td></tr>
+      <tr><td><code>state</code></td><td><code>running</code> / <code>waiting</code> / <code>idle</code> / <code>ended</code></td></tr>
+      <tr><td><code>started_at</code> / <code>updated_at</code></td><td>UTC の ISO 8601</td></tr>
+    </table>
+  </div>
+
+  <h2>現状と未確認事項</h2>
+  <table class="todo">
+    <tr><th style="width:26%">項目</th><th>状況</th></tr>
+    <tr><td>Claude Code の書き出し</td><td>このPCで実セッションから書き出せることを確認済み</td></tr>
+    <tr><td>Codex の書き出し</td><td>未確認。<code>/hooks</code> で信頼の承認をした後に確認する</td></tr>
+    <tr><td>承認待ちの検知</td><td>未確認。サンプル入力では動作したが、実際の承認場面では試していない</td></tr>
+    <tr><td>PC 間の同期遅延</td><td>未計測。2 台目の PC を用意してから計測する</td></tr>
+    <tr><td>他 PC への展開</td><td>未着手。hook スクリプトを OneDrive 上に置けば配布の手間がなくなる</td></tr>
+    <tr><td>dotfiles との整合</td><td><code>settings.json</code> を直接編集したため、<code>install.ps1</code> を実行すると消える可能性がある。<code>settings.template.json</code> にも反映が必要</td></tr>
+  </table>
+</main>
+</body>
+</html>
