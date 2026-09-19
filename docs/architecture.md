@@ -8,38 +8,47 @@
 
 ```text
 Claude Code / Codex hook ─┐
-                           ├─ %OneDrive%\agent-dashboard\<PC>\*.json ─ OneDrive ─ server.py ─ localhost browser
-Task Scheduler (60秒) ────┘                       host.json
+                           ├─ %OneDrive%\agent-dashboard\<host-id>\*.json ─ OneDrive ─ server.py ─ localhost browser
+Task Scheduler (60秒) ────┘                         host.json / hook.json
 ```
 
-- hook はセッション状態のみを書き込む。Claude Code の通常イベントは非同期、停止と終了は同期で実行する。
+- hook は親セッション状態だけを書き込む。Claude Code / Codex の subagent event は `agent_id` または `agent_type` を持つため無視する。通常イベントは非同期、停止と終了は同期で実行する。
 - `Agent Dashboard Heartbeat` はログオン中の利用者コンテキストで1分ごとに `host.json` を更新する。OneDrive を使うため、サービスアカウントや管理者権限は不要。
 - `server.py` は設定画面で指定した起点フォルダを読むだけで、127.0.0.1 以外には待ち受けない。初期値は `%OneDrive%\agent-dashboard` で、設定は閲覧 PC の `%LOCALAPPDATA%\Agent Dashboard\settings.json` に保存する。
 
 ## データ契約
 
+すべての同期 JSON は `schema_version: 3` を必須とし、未知の version は読まない。1ファイルは 32 KiB 以下、最大 100 host・host あたり最大 100 session とする。host directory 名、`host.json`、session JSON の `host_id` は一致しなければデータ異常にする。
+
 `host.json`:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
+  "host_id": "host-7d8a9c0e1f2a3b4c",
   "pc": "DEV-PC01",
-  "last_seen_at": "2026-09-19T08:00:00.0000000Z",
-  "tools": { "claude": { "configured": true }, "codex": { "configured": true } }
+  "user": "alice",
+  "last_heartbeat_at": "2026-09-19T08:00:00.0000000Z",
+  "tools": {
+    "claude": { "configured": true, "trust": "not_applicable" },
+    "codex": { "configured": true, "trust": "unverified" }
+  }
 }
 ```
 
-セッション JSON は `pc`, `tool`, `session_id`, `project`, `branch`, `activity`, `state`, `started_at`, `updated_at` だけを保存する。サーバ API はこのうち表示に必要な項目だけを返す。
+`hook.json` は `host_id` と `last_hook_at` だけを保存する。heartbeat と最後に正常な hook event を分けて表示する。
+
+session JSON は `host_id`, `pc`, `user`, `tool`, `session`, `project`, `project_id`, `project_status`, `branch`, `branch_status`, `activity`, `activity_expires_at`, `state`, `started_at`, `updated_at` だけを保存する。`host_id` は Windows SID と PC 名から生成する非可逆 ID、`session` は元の session ID の短いハッシュ、`project_id` は cwd の短いハッシュである。これにより同じ PC の別ユーザー、同名 project、同一 project の複数 session を区別する。
 
 保存しない情報:
 
 - ユーザープロンプト本文
 - 実行コマンド、URL、検索語、パッチ本文
-- 絶対作業パス
+- 絶対作業パス、元の session ID、Windows SID
 
 この制約により、OneDrive 共有範囲へ意図しない業務・秘密情報が残るリスクを下げる。プロジェクト名やブランチ名にも機密性がある組織では、hook の保存項目をさらに削る。
 
-v1 の状態ファイルが残っている端末では、heartbeat が次回実行時に `cwd`、プロンプト、旧 `activity` を削除して v2 へ移行する。
+旧 schema の状態ファイルは移行せず、サーバーが PC 単位のデータ異常として表示する。再度インストーラーを実行して v3 の hook を配布する。
 
 ## 状態モデル
 
@@ -52,7 +61,23 @@ v1 の状態ファイルが残っている端末では、heartbeat が次回実�
 | `ended` | CLI セッション終了 | SessionEnd |
 | `stale` | 5分以上セッション更新がないため真の状態を保証できない | 閲覧サーバが派生 |
 
-`ended` は終端状態とし、遅れて完了した非同期 hook で `running` に戻さない。Claude Code の拒否・ツール失敗も記録対象に含める。Codex で共通でないイベントは登録せず、公式にサポートされる共通 lifecycle event のみを利用する。
+`ended` は終端状態とし、遅れて完了した非同期 hook で `running` に戻さない。tool 失敗は `state: running` と `activity: tool_failed`（30秒）、承認拒否は `state: running` と `activity: approval_denied`（30秒）であり、turn 全体の `error` とは混同しない。`PostToolUse` は必ず activity を消す。`StopFailure` の `turn_failed` は次の prompt または停止まで残す。
+
+| event | Claude Code | Codex | 遷移 |
+| --- | --- | --- | --- |
+| `SessionStart` | 登録 | 登録 | `idle`、activity を消す |
+| `UserPromptSubmit` | 登録 | 登録 | `running`、activity を消す |
+| `PreToolUse` | 登録 | 登録 | `running`、`tool_running` |
+| `PostToolUse` | 登録 | 登録 | `running`、activity を消す |
+| `PostToolUseFailure` | 登録 | 未登録 | `running`、`tool_failed` を30秒 |
+| `PermissionRequest` | 登録 | 登録 | `waiting`、`approval_pending` |
+| `PermissionDenied` | 登録 | 未登録 | `running`、`approval_denied` を30秒 |
+| `StopFailure` | 登録 | 未登録 | `error`、`turn_failed` |
+| `Stop` | 登録 | 登録 | `idle`、activity を消す |
+| `Interrupt` | 未登録 | 登録 | `idle`、`interrupted` を30秒 |
+| `SessionEnd` | 登録 | 登録 | `ended`、activity を消す |
+
+Codex の trust 状態は hook JSON だけから取得できないため、`configured: true / trust: unverified` と表示する。利用者は `/hooks` で trust を確認する。
 
 終了していないが24時間以上更新がないセッションは、過去のクラッシュや旧セッションによる一覧の肥大化を避けるため画面から非表示にする。状態ファイル自体は削除しない。
 
@@ -62,12 +87,13 @@ heartbeat の時刻を閲覧端末で評価する。
 
 | 状態 | 最終 heartbeat |
 | --- | --- |
-| `online` | 3分以内 |
-| `stale` | 3分超10分以内 |
-| `offline` | 10分超 |
-| `unknown` | 旧形式のセッションはあるが heartbeat がない |
+| `healthy` | 3分以内 |
+| `heartbeat_delayed` | 3分超10分以内 |
+| `unmonitorable` | 10分超。PC停止、ログオフ、task失敗、OneDrive停止のいずれか |
+| `clock_skew` | 閲覧 PC より1分超未来 |
+| `data_error` | JSON 不正、schema不一致、ID不一致など |
 
-これは OneDrive の数十秒程度の同期遅延を見込んだ運用上のしきい値である。全端末で時刻同期を有効にする。OneDrive が止まった端末は offline と同じ見え方になるため、「端末の電源断」と「同期障害」は画面だけでは区別できない。
+これは OneDrive の数十秒程度の同期遅延を見込んだ運用上のしきい値である。全端末で時刻同期を有効にする。`heartbeat_delayed` / `unmonitorable` / `clock_skew` の host の session は `stale` として確度を落とす。OneDrive が止まった端末は `unmonitorable` と同じ見え方になるため、「端末の電源断」と「同期障害」は画面だけでは区別できない。
 
 ## 導入・更新・解除
 

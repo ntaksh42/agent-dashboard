@@ -18,85 +18,149 @@ def write_json(path, value):
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
+def now_text(offset=timedelta()):
+    return (datetime.now(timezone.utc) + offset).isoformat()
+
+
+def host_data(host_id, heartbeat=None, tools=None):
+    return {
+        "schema_version": 3,
+        "host_id": host_id,
+        "pc": "DEV-PC01",
+        "user": "alice",
+        "last_heartbeat_at": heartbeat or now_text(),
+        "tools": tools or {
+            "claude": {"configured": True, "trust": "not_applicable"},
+            "codex": {"configured": True, "trust": "unverified"},
+        },
+    }
+
+
+def session_data(host_id, session="a1b2c3d4", state="running", updated=None, **changes):
+    result = {
+        "schema_version": 3,
+        "host_id": host_id,
+        "pc": "DEV-PC01",
+        "user": "alice",
+        "tool": "claude",
+        "session": session,
+        "project": "project",
+        "project_id": "project-deadbeef",
+        "project_status": "available",
+        "branch": "main",
+        "branch_status": "branch",
+        "activity": None,
+        "activity_expires_at": None,
+        "state": state,
+        "started_at": now_text(timedelta(minutes=-1)),
+        "updated_at": updated or now_text(),
+    }
+    result.update(changes)
+    return result
+
+
 class LoadDashboardTests(unittest.TestCase):
-    def test_returns_setup_error_when_root_is_not_available(self):
+    def make_host(self, root, host_id="host-abc"):
+        directory = root / host_id
+        directory.mkdir()
+        write_json(directory / "host.json", host_data(host_id))
+        return directory
+
+    def test_exposes_valid_data_and_redacts_unknown_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host = self.make_host(root)
+            value = session_data("host-abc", cwd="C:\\secret", session_id="private", first_prompt="secret")
+            write_json(host / "claude-a1b2c3d4.json", value)
+
+            result = dashboard_server.load_dashboard(root)
+
+            self.assertEqual("healthy", result["hosts"][0]["health"])
+            self.assertEqual("project", result["sessions"][0]["project"])
+            self.assertNotIn("cwd", result["sessions"][0])
+            self.assertNotIn("session_id", result["sessions"][0])
+            self.assertEqual(0, result["data_errors"])
+
+    def test_unmonitorable_host_downgrades_live_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host = self.make_host(root)
+            write_json(host / "host.json", host_data("host-abc", now_text(timedelta(minutes=-11))))
+            write_json(host / "claude-a1b2c3d4.json", session_data("host-abc"))
+
+            result = dashboard_server.load_dashboard(root)
+
+            self.assertEqual("unmonitorable", result["hosts"][0]["health"])
+            self.assertEqual(("stale", "host_health"), (result["sessions"][0]["state"], result["sessions"][0]["state_reason"]))
+
+    def test_schema_error_is_isolated_to_its_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            good = self.make_host(root, "host-good")
+            broken = root / "host-broken"
+            broken.mkdir()
+            write_json(broken / "host.json", {"schema_version": 2})
+            write_json(good / "claude-a1b2c3d4.json", session_data("host-good"))
+
+            result = dashboard_server.load_dashboard(root)
+
+            self.assertEqual(2, len(result["hosts"]))
+            self.assertEqual(["schema_version"], result["hosts"][0]["data_errors"])
+            self.assertEqual("project", result["sessions"][0]["project"])
+
+    def test_future_clock_and_expired_transient_activity_are_marked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host = self.make_host(root)
+            write_json(host / "host.json", host_data("host-abc", now_text(timedelta(minutes=2))))
+            write_json(host / "claude-a1b2c3d4.json", session_data("host-abc", activity="tool_failed", activity_expires_at=now_text(timedelta(seconds=-1))))
+
+            result = dashboard_server.load_dashboard(root)
+
+            self.assertEqual("clock_skew", result["hosts"][0]["health"])
+            self.assertEqual("stale", result["sessions"][0]["state"])
+            self.assertIsNone(result["sessions"][0]["activity"])
+
+    def test_invalid_tool_contract_preserves_host_and_reports_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host = self.make_host(root)
+            write_json(host / "host.json", host_data("host-abc", tools={"claude": "invalid", "codex": {"configured": True, "trust": "unverified"}}))
+
+            result = dashboard_server.load_dashboard(root)
+
+            self.assertEqual("healthy", result["hosts"][0]["health"])
+            self.assertIn("tool_contract", result["hosts"][0]["data_errors"])
+            self.assertFalse(result["hosts"][0]["tools"]["claude"]["configured"])
+
+    def test_session_identity_mismatch_is_rejected_per_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host = self.make_host(root)
+            write_json(host / "claude-a1b2c3d4.json", session_data("host-abc", user="other"))
+
+            result = dashboard_server.load_dashboard(root)
+
+            self.assertEqual([], result["sessions"])
+            self.assertIn("session_identity_mismatch", result["hosts"][0]["data_errors"])
+
+    def test_returns_setup_error_when_root_is_unavailable(self):
         result = dashboard_server.load_dashboard(None)
 
         self.assertEqual([], result["hosts"])
         self.assertIn("起点フォルダ", result["source_error"])
 
-    def test_exposes_host_and_redacts_legacy_sensitive_fields(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            pc = root / "DEV-PC01"
-            pc.mkdir()
-            now = datetime.now(timezone.utc).isoformat()
-            write_json(pc / "host.json", {"pc": "DEV-PC01", "last_seen_at": now, "tools": {"claude": {"configured": True}, "codex": {"configured": False}}})
-            write_json(pc / "claude-1.json", {"pc": "DEV-PC01", "tool": "claude", "session_id": "1", "cwd": "C:\\secret\\project", "first_prompt": "password=secret", "last_prompt": "do not expose", "project": "project", "state": "running", "updated_at": now})
-
-            result = dashboard_server.load_dashboard(root)
-
-            self.assertEqual("online", result["hosts"][0]["status"])
-            self.assertTrue(result["hosts"][0]["tools"]["claude"])
-            self.assertEqual("project", result["sessions"][0]["project"])
-            self.assertNotIn("cwd", result["sessions"][0])
-            self.assertNotIn("first_prompt", result["sessions"][0])
-            self.assertNotIn("last_prompt", result["sessions"][0])
-
-    def test_marks_old_session_stale_and_old_heartbeat_offline(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            pc = root / "DEV-PC02"
-            pc.mkdir()
-            old = (datetime.now(timezone.utc) - timedelta(minutes=11)).isoformat()
-            write_json(pc / "host.json", {"pc": "DEV-PC02", "last_seen_at": old, "tools": {}})
-            write_json(pc / "codex-1.json", {"pc": "DEV-PC02", "tool": "codex", "session_id": "1", "project": "app", "state": "running", "updated_at": old})
-
-            result = dashboard_server.load_dashboard(root)
-
-            self.assertEqual("offline", result["hosts"][0]["status"])
-            self.assertEqual("stale", result["sessions"][0]["state"])
-
-    def test_ignores_invalid_json_without_breaking_the_api(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            pc = root / "BROKEN"
-            pc.mkdir()
-            (pc / "host.json").write_text("not json", encoding="utf-8")
-
-            result = dashboard_server.load_dashboard(root)
-
-            self.assertEqual([], result["hosts"])
-            self.assertEqual(1, result["data_errors"])
-
-    def test_hides_unended_sessions_older_than_a_day(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            pc = root / "OLD-PC"
-            pc.mkdir()
-            old = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
-            write_json(pc / "codex-1.json", {"pc": "OLD-PC", "tool": "codex", "session_id": "1", "project": "old", "state": "idle", "updated_at": old})
-
-            result = dashboard_server.load_dashboard(root)
-
-            self.assertEqual([], result["sessions"])
-
 
 class SettingsTests(unittest.TestCase):
-    def test_saves_and_loads_existing_root(self):
+    def test_saves_and_loads_existing_root_and_host_names(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "data"
             root.mkdir()
             config = Path(directory) / "settings" / "settings.json"
 
-            dashboard_server.save_root(config, root)
+            dashboard_server.save_settings(config, root, {"host-abc": "開発PC"})
 
-            self.assertEqual(root.resolve(), dashboard_server.load_saved_root(config))
-
-    def test_rejects_missing_root(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, "存在しない"):
-                dashboard_server.resolve_root(str(Path(directory) / "missing"))
+            self.assertEqual((root.resolve(), {"host-abc": "開発PC"}), dashboard_server.load_settings(config))
 
     def test_update_changes_root_and_persists_it(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -107,11 +171,15 @@ class SettingsTests(unittest.TestCase):
             config = Path(directory) / "settings.json"
             state = dashboard_server.DashboardState(first, config)
 
-            result = state.update_root(str(second))
+            result = state.update(str(second), {"host-abc": "Build PC"})
 
-            self.assertEqual(second.resolve(), result)
-            self.assertEqual(second.resolve(), state.root())
-            self.assertEqual(second.resolve(), dashboard_server.load_saved_root(config))
+            self.assertTrue(result["valid"])
+            self.assertEqual((second.resolve(), {"host-abc": "Build PC"}), dashboard_server.load_settings(config))
+
+    def test_rejects_missing_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "存在しない"):
+                dashboard_server.resolve_root(str(Path(directory) / "missing"))
 
 
 class HookStateTransitionTests(unittest.TestCase):
