@@ -9,19 +9,24 @@ function Set-ProjectMetadata($state, [string]$cwd) {
         $state.branch = $null; $state.branch_status = 'unavailable'
         return
     }
-    $trimmed = $cwd.TrimEnd('\', '/')
-    $project = Split-Path $trimmed -Leaf
-    $state.project = Limit-Text $project 96
-    $state.project_id = "project-$(Get-HashId $cwd 10)"
-    $state.project_status = if ($project) { 'available' } else { 'cwd_root' }
-    $branch = (& git -C $cwd branch --show-current 2>$null | Select-Object -First 1)
-    if ($LASTEXITCODE -eq 0 -and $branch) {
-        $state.branch = Limit-Text $branch 128; $state.branch_status = 'branch'
-        return
+    try {
+        $trimmed = $cwd.TrimEnd('\', '/')
+        $project = Split-Path $trimmed -Leaf
+        $state.project = Limit-Text $project 96
+        $state.project_id = "project-$(Get-HashId $cwd 10)"
+        $state.project_status = if ($project) { 'available' } else { 'cwd_root' }
+        $branch = (& git -C $cwd branch --show-current 2>$null | Select-Object -First 1)
+        if ($LASTEXITCODE -eq 0 -and $branch) {
+            $state.branch = Limit-Text $branch 128; $state.branch_status = 'branch'
+            return
+        }
+        $insideGit = (& git -C $cwd rev-parse --is-inside-work-tree 2>$null | Select-Object -First 1)
+        $state.branch = $null
+        $state.branch_status = if ($insideGit -eq 'true') { 'detached' } else { 'non_git' }
+    } catch {
+        $state.project = $null; $state.project_id = $null; $state.project_status = 'cwd_error'
+        $state.branch = $null; $state.branch_status = 'unavailable'
     }
-    $insideGit = (& git -C $cwd rev-parse --is-inside-work-tree 2>$null | Select-Object -First 1)
-    $state.branch = $null
-    $state.branch_status = if ($insideGit -eq 'true') { 'detached' } else { 'non_git' }
 }
 
 function Clear-Activity($state) {
@@ -32,6 +37,12 @@ function Clear-Activity($state) {
 function Set-TransientActivity($state, [string]$activity, [string]$now) {
     $state.activity = $activity
     $state.activity_expires_at = (Get-Date $now).ToUniversalTime().AddSeconds(30).ToString('o')
+}
+
+function Get-StopFailureReason($event) {
+    $known = 'rate_limit', 'overloaded', 'authentication_failed', 'oauth_org_not_allowed', 'account_on_hold', 'billing_error', 'invalid_request', 'model_not_found', 'server_error', 'max_output_tokens', 'cloud_credential_error', 'unknown'
+    if ($event.error -in $known) { return $event.error }
+    return 'unknown'
 }
 
 function Update-HookHealth([string]$directory, $dashboardHost, [string]$now) {
@@ -68,7 +79,7 @@ try {
             [pscustomobject]@{
                 schema_version = 3; host_id = $dashboardHost.host_id; pc = $dashboardHost.pc; user = $dashboardHost.user; tool = $Tool
                 session = $sessionKey.Substring(0, 8); project = $null; project_id = $null; project_status = 'cwd_missing'
-                branch = $null; branch_status = 'unavailable'; activity = $null; activity_expires_at = $null
+                branch = $null; branch_status = 'unavailable'; activity = $null; activity_expires_at = $null; failure_reason = $null
                 state = 'idle'; started_at = $now; updated_at = $now
             }
         }
@@ -78,14 +89,14 @@ try {
         Set-ProjectMetadata $state $event.cwd
 
         switch ($event.hook_event_name) {
-            'SessionStart' { $state.state = 'idle'; Clear-Activity $state }
-            'UserPromptSubmit' { $state.state = 'running'; Clear-Activity $state }
-            'PreToolUse' { $state.state = 'running'; Clear-Activity $state; $state.activity = 'tool_running' }
+            'SessionStart' { $state.state = 'idle'; Clear-Activity $state; $state.failure_reason = $null }
+            'UserPromptSubmit' { $state.state = 'running'; Clear-Activity $state; $state.failure_reason = $null }
+            'PreToolUse' { $state.state = 'running'; Clear-Activity $state; $state.activity = 'tool_running'; $state.failure_reason = $null }
             'PostToolUse' { $state.state = 'running'; Clear-Activity $state }
-            'PostToolUseFailure' { $state.state = 'running'; Set-TransientActivity $state 'tool_failed' $now }
+            'PostToolUseFailure' { $state.state = 'running'; Set-TransientActivity $state $(if ($event.is_interrupt) { 'tool_interrupted' } else { 'tool_failed' }) $now }
             'PermissionRequest' { $state.state = 'waiting'; Clear-Activity $state; $state.activity = 'approval_pending' }
             'PermissionDenied' { $state.state = 'running'; Set-TransientActivity $state 'approval_denied' $now }
-            'StopFailure' { $state.state = 'error'; $state.activity = 'turn_failed'; $state.activity_expires_at = $null }
+            'StopFailure' { $state.state = 'error'; $state.activity = 'turn_failed'; $state.activity_expires_at = $null; $state.failure_reason = Get-StopFailureReason $event }
             'Stop' { $state.state = 'idle'; Clear-Activity $state }
             'Interrupt' { $state.state = 'idle'; Set-TransientActivity $state 'interrupted' $now }
             'SessionEnd' { $state.state = 'ended'; Clear-Activity $state }

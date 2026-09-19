@@ -4,7 +4,7 @@
 
 ## 表示する情報
 
-- 端末ごとの online / stale / offline / 未確認
+- 端末ごとの 正常 / heartbeat 遅延 / 監視不能 / 時計ずれ / データ異常
 - Claude Code / Codex ごとの 実行中 / 承認待ち / 入力待ち / エラー / 状態不明
 - プロジェクト名、git ブランチ、ツール種別だけ
 
@@ -51,5 +51,11 @@
 - hook を変更した場合は、配布元 PC で `hook\install.ps1` を再実行します。各端末へのスクリプト同期後も、設定内容を変更した場合は Codex の `/hooks` で信頼状態を確認してください。
 - 解除する場合は対象 PC で `install.ps1 -Uninstall` を実行します。hook と heartbeat だけを外し、収集済み JSON は残します。
 - インストーラーは初回実行時に設定ファイルの `.agent-dashboard.bak` を作ります。解除はこのバックアップを復元せず、Dashboard の hook だけを除去するため、その後の利用者設定を保持します。
+
+## 制約
+
+このダッシュボードは状態を確認するだけであり、PC や agent の遠隔操作・承認操作、prompt / 回答 / command / 変更ファイルの閲覧はできません。OneDrive 同期を使うため秒単位の更新保証はなく、`監視不能` は PC 電源断、ログオフ、scheduled task 故障、OneDrive 停止を区別しません。
+
+Windows のログオン中ユーザー、同一 OneDrive アカウントを同期する PC、ローカルで動く Claude Code / Codex hook のみが対象です。macOS / Linux、cloud session、ブラウザを閉じた状態での確実な通知は対象外です。
 
 `.ps1` は PowerShell 5.1 互換の UTF-8 BOM 付きで管理します。

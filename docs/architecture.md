@@ -40,6 +40,10 @@ Task Scheduler (60秒) ────┘                         host.json / hook.
 
 session JSON は `host_id`, `pc`, `user`, `tool`, `session`, `project`, `project_id`, `project_status`, `branch`, `branch_status`, `activity`, `activity_expires_at`, `state`, `started_at`, `updated_at` だけを保存する。`host_id` は Windows SID と PC 名から生成する非可逆 ID、`session` は元の session ID の短いハッシュ、`project_id` は cwd の短いハッシュである。これにより同じ PC の別ユーザー、同名 project、同一 project の複数 session を区別する。
 
+`project_status` は `available` / `cwd_missing` / `cwd_root` / `cwd_error`、`branch_status` は `branch` / `detached` / `non_git` / `unavailable` のいずれかである。git worktree は通常の branch 表示と非可逆 `project_id` の組み合わせで区別する。
+
+同じ `(tool, session)` を名乗る複数ファイルは、ファイル名順で最初の1件だけを採用し、残りを当該 host のデータ異常として表示する。host ID が重複する directory は host ID 不一致として採用しない。
+
 保存しない情報:
 
 - ユーザープロンプト本文
@@ -61,7 +65,7 @@ session JSON は `host_id`, `pc`, `user`, `tool`, `session`, `project`, `project
 | `ended` | CLI セッション終了 | SessionEnd |
 | `stale` | 5分以上セッション更新がないため真の状態を保証できない | 閲覧サーバが派生 |
 
-`ended` は終端状態とし、遅れて完了した非同期 hook で `running` に戻さない。tool 失敗は `state: running` と `activity: tool_failed`（30秒）、承認拒否は `state: running` と `activity: approval_denied`（30秒）であり、turn 全体の `error` とは混同しない。`PostToolUse` は必ず activity を消す。`StopFailure` の `turn_failed` は次の prompt または停止まで残す。
+`ended` は終端状態とし、遅れて完了した非同期 hook で `running` に戻さない。tool 失敗は `state: running` と `activity: tool_failed`（30秒）、承認拒否は `state: running` と `activity: approval_denied`（30秒）であり、turn 全体の `error` とは混同しない。`PostToolUse` は必ず activity を消す。`StopFailure` の `turn_failed` は次の prompt または停止まで残す。Claude Code が渡す API failure code は `failure_reason` に allowlist 化して保存し、`rate_limit`、認証、混雑、server error 等を画面で区別する。利用者キャンセルは `Interrupt` または `tool_interrupted` として30秒表示する。
 
 | event | Claude Code | Codex | 遷移 |
 | --- | --- | --- | --- |
@@ -78,6 +82,8 @@ session JSON は `host_id`, `pc`, `user`, `tool`, `session`, `project`, `project
 | `SessionEnd` | 登録 | 登録 | `ended`、activity を消す |
 
 Codex の trust 状態は hook JSON だけから取得できないため、`configured: true / trust: unverified` と表示する。利用者は `/hooks` で trust を確認する。
+
+要確認は `承認待ち > turn エラー > 監視不能 > heartbeat 遅延 > データ異常 > hook 未設定` の優先度で表示し、同一優先度内は新しい発生時刻を先にする。同じ host / tool / session / 状態の通知は1件にまとめる。
 
 終了していないが24時間以上更新がないセッションは、過去のクラッシュや旧セッションによる一覧の肥大化を避けるため画面から非表示にする。状態ファイル自体は削除しない。
 
@@ -105,8 +111,9 @@ heartbeat の時刻を閲覧端末で評価する。
 
 ## 障害時の見方
 
-- `未確認`: heartbeat 未導入、または旧データだけが残っている。対象端末でインストーラーを実行する。
-- `stale` / `offline`: 対象端末のログオン、OneDrive 同期、タスクスケジューラの最終実行結果を確認する。
+- `データ異常`: schema、型、ID、時刻、または JSON size が契約に合わない。該当 PC の JSON と hook version を確認する。
+- `heartbeat 遅延` / `監視不能`: 対象端末のログオン、OneDrive 同期、タスクスケジューラの最終実行結果を確認する。PC 停止と同期障害は区別できない。
+- `時計ずれ`: 対象端末または閲覧 PC の時刻同期を確認する。
 - `読み取りエラー`: OneDrive 同期中の JSON、手動編集、または壊れた旧ファイルの可能性がある。次回同期で解消しない場合にファイルを調べる。
 - Codex が表示されない: `/hooks` で trust 状態と `~/.codex/hooks.json` を確認する。
 
@@ -118,7 +125,7 @@ Python の API テストは次を固定する。
 py -3 -m unittest server\test_server.py
 ```
 
-実機受け入れでは、Claude Code と Codex の各々で「プロンプト送信、承認要求、承認拒否、ツール失敗、停止、端末ログオフ」を2台以上で確認する。OneDrive 同期停止時に10分で offline 表示になることも確認する。
+実機受け入れでは、Claude Code と Codex の各々で「プロンプト送信、承認要求、承認拒否、ツール失敗、停止、端末ログオフ」を2台以上で確認する。OneDrive 同期停止時に10分で `監視不能` 表示になることも確認する。
 
 ## 制約と将来の移行条件
 

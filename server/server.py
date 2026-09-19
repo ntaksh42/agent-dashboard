@@ -21,8 +21,9 @@ STALE_SESSION_VISIBLE = timedelta(hours=24)
 FUTURE_CLOCK_TOLERANCE = timedelta(minutes=1)
 KNOWN_STATES = {"running", "waiting", "idle", "error", "ended"}
 KNOWN_TOOLS = {"claude", "codex"}
-KNOWN_ACTIVITIES = {"tool_running", "tool_failed", "approval_pending", "approval_denied", "turn_failed", "interrupted"}
-KNOWN_PROJECT_STATUSES = {"available", "cwd_missing", "cwd_root"}
+KNOWN_ACTIVITIES = {"tool_running", "tool_failed", "tool_interrupted", "approval_pending", "approval_denied", "turn_failed", "interrupted"}
+KNOWN_FAILURE_REASONS = {"rate_limit", "overloaded", "authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error", "invalid_request", "model_not_found", "server_error", "max_output_tokens", "cloud_credential_error", "unknown"}
+KNOWN_PROJECT_STATUSES = {"available", "cwd_missing", "cwd_root", "cwd_error"}
 KNOWN_BRANCH_STATUSES = {"branch", "detached", "non_git", "unavailable"}
 SETTINGS_FILE_NAME = "settings.json"
 
@@ -165,6 +166,7 @@ def validate_session(source, directory_id):
         "branch_status": branch_status,
         "activity": activity,
         "activity_expires_at": iso_time(expires) if expires else None,
+        "failure_reason": source.get("failure_reason") if source.get("failure_reason") in KNOWN_FAILURE_REASONS else None,
         "state": state,
         "started_at": iso_time(started),
         "updated_at": iso_time(updated),
@@ -244,6 +246,9 @@ def load_dashboard(root):
                 if identity in seen_sessions:
                     raise DataError("duplicate_session")
                 seen_sessions.add(identity)
+                if heartbeat is None:
+                    host["pc"] = session["pc"]
+                    host["user"] = session["user"]
                 if session["pc"] != host["pc"] or session["user"] != host["user"]:
                     raise DataError("session_identity_mismatch")
                 if session["activity_expires_at"] and parse_time(session["activity_expires_at"]) <= now:
