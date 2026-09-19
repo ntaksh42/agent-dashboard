@@ -38,7 +38,7 @@ function Set-Hooks([string]$path, [string]$tool, [string[]]$events, [string[]]$a
     } else { [pscustomobject]@{} }
     if (-not $cfg.PSObject.Properties['hooks']) { $cfg | Add-Member hooks ([pscustomobject]@{}) }
 
-    $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$hook`" -Tool $tool"
+    $command = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$hook`" -Tool $tool"
     foreach ($eventName in $events) {
         $groups = @(Remove-DashboardHandlers $cfg.hooks.$eventName)
         if (-not $Uninstall) {
@@ -54,7 +54,7 @@ function Set-Hooks([string]$path, [string]$tool, [string[]]$events, [string[]]$a
 }
 
 function Install-Heartbeat {
-    $taskCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$heartbeat`""
+    $taskCommand = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$heartbeat`""
     & schtasks.exe /Create /TN $taskName /SC MINUTE /MO 1 /TR $taskCommand /F | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'heartbeat タスクの作成に失敗しました。' }
     & $heartbeat
