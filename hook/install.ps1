@@ -40,7 +40,7 @@ function Set-Hooks([string]$path, [string]$tool, [string[]]$events, [string[]]$a
 
     $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$hook`" -Tool $tool"
     foreach ($eventName in $events) {
-        $groups = Remove-DashboardHandlers $cfg.hooks.$eventName
+        $groups = @(Remove-DashboardHandlers $cfg.hooks.$eventName)
         if (-not $Uninstall) {
             $handler = [ordered]@{ type = 'command'; command = $command }
             if ($eventName -in $asyncEvents) { $handler.async = $true }
